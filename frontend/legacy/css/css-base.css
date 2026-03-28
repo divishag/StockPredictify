@@ -1,0 +1,102 @@
+:root {
+  --bg-deep:       #040d1a;
+  --bg-primary:    #071428;
+  --bg-card:       rgba(10, 25, 55, 0.7);
+  --bg-card-hover: rgba(14, 35, 70, 0.85);
+
+  --cyan:          #00d4ff;
+  --cyan-dim:      #0099cc;
+  --cyan-glow:     rgba(0, 212, 255, 0.15);
+  --green:         #00e5a0;
+  --green-dim:     rgba(0, 229, 160, 0.15);
+  --red:           #ff4d6d;
+
+  --text-primary:  #ffffff;
+  --text-secondary:#a0b4cc;
+  --text-muted:    #5a7a99;
+
+  --border:        rgba(0, 212, 255, 0.15);
+  --border-bright: rgba(0, 212, 255, 0.4);
+
+  --font-display: 'Syne', sans-serif;
+  --font-body:    'DM Sans', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  --section-pad: 100px 0;
+  --card-pad:    28px;
+  --radius-lg:   16px;
+  --radius-md:   10px;
+  --radius-sm:   6px;
+
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Global Reset and Base Styles */
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+ul {
+  list-style: none;
+}
+
+img, canvas {
+  display: block;
+  max-width: 100%;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: clamp(2.4rem, 5vw, 4rem); font-weight: 800; }
+h2 { font-size: clamp(1.8rem, 3vw, 2.6rem); font-weight: 700; }
+h3 { font-size: 1.2rem; font-weight: 600; }
+
+p  { color: var(--text-secondary); line-height: 1.75; }
+
+.container {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.section-heading {
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+.section-heading h2 span {
+  color: var(--cyan);
+}
+
+.section-heading p {
+  max-width: 520px;
+  margin: 14px auto 0;
+  font-size: 1rem;
+}
