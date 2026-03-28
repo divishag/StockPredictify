@@ -121,6 +121,38 @@
   color: var(--text-primary);
 }
 
+.dataset-form {
+  max-width: 760px;
+}
+
+.dataset-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.dataset-input {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.dataset-input:focus {
+  border-color: var(--border-bright);
+  box-shadow: 0 0 0 0.2rem var(--cyan-glow);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+
+.dataset-help {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.dataset-status {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
 .mini-tile {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -157,55 +189,6 @@
 .btn-outline-cyan:hover {
   background: var(--cyan-glow);
   color: var(--text-primary);
-}
-
-.small-label {
-  font-family: var(--font-mono);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-}
-
-.stock-progress {
-  background: rgba(5, 15, 30, 0.8);
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  height: 1.2rem;
-}
-
-.stock-progress .progress-bar {
-  background: linear-gradient(135deg, var(--cyan), #0077ee);
-  color: #041528;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
-
-.stat-card {
-  min-height: 132px;
-}
-
-.stat-title {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-.stat-value {
-  color: var(--text-primary);
-  font-size: clamp(1.4rem, 2vw, 2rem);
-}
-
-.stat-hint {
-  font-size: 0.88rem;
-}
-
-.tone-green .stat-value {
-  color: var(--green);
-}
-
-.tone-red .stat-value {
-  color: var(--red);
 }
 
 @media (max-width: 900px) {
