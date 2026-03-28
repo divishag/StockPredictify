@@ -6,46 +6,20 @@
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(4, 13, 26, 0.82);
+  background: var(--top-nav-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
+}
+
+.top-nav-row {
+  gap: 0.9rem;
 }
 
 .brand-name {
   font-family: var(--font-display);
   font-weight: 700;
   line-height: 1.1;
-  color: var(--text-primary);
-}
-
-.brand-sub {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.logo-chip {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--cyan), #0066cc);
-  color: #fff;
-}
-
-.nav-cta-btn {
-  border: 1px solid var(--border-bright);
-  color: var(--cyan);
-  border-radius: var(--radius-sm);
-}
-
-.nav-cta-btn:hover {
-  background: var(--cyan-glow);
   color: var(--text-primary);
 }
 
@@ -91,9 +65,37 @@
   color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: rgba(6, 18, 37, 0.35);
+  background: var(--surface-muted);
   font-family: var(--font-mono);
   font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.top-menu-nav {
+  margin-left: auto;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.theme-switch {
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.5rem 0.85rem;
+  white-space: nowrap;
+  transition: var(--transition);
+  margin-left: 0.6rem;
+}
+
+.theme-switch:hover {
+  background: linear-gradient(135deg, var(--cyan), #0077ee);
+  color: #041528;
+  border-color: transparent;
 }
 
 .menu-nav .nav-link:hover {
@@ -207,6 +209,28 @@
 }
 
 @media (max-width: 900px) {
+  .top-nav-row {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .top-menu-nav {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .theme-switch {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .top-menu-nav .nav-link {
+    width: 100%;
+    text-align: left;
+  }
+
   .content-wrap {
     padding-top: 20px;
   }

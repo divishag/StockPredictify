@@ -19,6 +19,8 @@
 
   --border: rgba(0, 212, 255, 0.15);
   --border-bright: rgba(0, 212, 255, 0.4);
+  --top-nav-bg: rgba(4, 13, 26, 0.82);
+  --surface-muted: rgba(6, 18, 37, 0.35);
 
   --font-display: "Syne", sans-serif;
   --font-body: "DM Sans", sans-serif;
@@ -28,6 +30,29 @@
   --radius-md: 10px;
   --radius-sm: 6px;
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root[data-theme="light"] {
+  --bg-deep: #eef5ff;
+  --bg-primary: #f8fbff;
+  --bg-card: rgba(255, 255, 255, 0.82);
+  --bg-card-hover: rgba(255, 255, 255, 0.95);
+
+  --cyan: #0077ee;
+  --cyan-dim: #0063c7;
+  --cyan-glow: rgba(0, 119, 238, 0.12);
+  --green: #0d9f6e;
+  --green-dim: rgba(13, 159, 110, 0.12);
+  --red: #d64058;
+
+  --text-primary: #0f2a47;
+  --text-secondary: #3f5f82;
+  --text-muted: #6682a2;
+
+  --border: rgba(0, 119, 238, 0.18);
+  --border-bright: rgba(0, 119, 238, 0.35);
+  --top-nav-bg: rgba(255, 255, 255, 0.92);
+  --surface-muted: rgba(238, 245, 255, 0.92);
 }
 
 * {
@@ -49,6 +74,12 @@ body {
     radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 100, 200, 0.2) 0%, transparent 60%),
     radial-gradient(ellipse 50% 40% at 80% 80%, rgba(0, 50, 150, 0.1) 0%, transparent 50%);
   background-attachment: fixed;
+}
+
+:root[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse 85% 60% at 50% -20%, rgba(0, 119, 238, 0.18) 0%, transparent 65%),
+    radial-gradient(ellipse 65% 50% at 10% 100%, rgba(0, 170, 255, 0.12) 0%, transparent 55%);
 }
 
 h1,

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const menuOptions = [
   {
@@ -41,24 +41,48 @@ function StatCard({ title, value, hint, tone = "cyan" }) {
 
 export default function App() {
   const [activeMenu, setActiveMenu] = useState("dataset");
+  const [theme, setTheme] = useState("dark");
 
   const selected = useMemo(
     () => menuOptions.find((option) => option.key === activeMenu) || menuOptions[0],
     [activeMenu]
   );
 
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
   return (
     <div className="app-shell">
       <header className="top-nav">
-        <div className="container-xl d-flex align-items-center justify-content-between py-3">
-          <div className="brand-wrap d-flex align-items-center gap-2">
-            <div className="logo-chip">AI</div>
+        <div className="container-xl d-flex align-items-center justify-content-between py-3 top-nav-row">
+          <div className="brand-wrap d-flex align-items-center">
             <div>
-              <p className="brand-name mb-0">StockAI Intelligence</p>
-              <p className="brand-sub mb-0">React Dashboard</p>
+              <p className="brand-name mb-0">Predictify</p>
             </div>
           </div>
-          <button type="button" className="btn nav-cta-btn">Model Workspace</button>
+
+          <nav className="nav nav-pills gap-2 menu-nav top-menu-nav" aria-label="Main workflow menu">
+            {menuOptions.map((option, index) => (
+              <button
+                key={option.key}
+                type="button"
+                className={`nav-link ${activeMenu === option.key ? "active" : ""}`}
+                onClick={() => setActiveMenu(option.key)}
+              >
+                {index + 1}. {option.label}
+              </button>
+            ))}
+          </nav>
+
+          <button
+            type="button"
+            className="theme-switch"
+            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          >
+            {theme === "dark" ? "Light Theme" : "Dark Theme"}
+          </button>
         </div>
       </header>
 
@@ -69,21 +93,6 @@ export default function App() {
           <p className="hero-subtitle mb-0">
             Bootstrap-driven React interface preserving your cyan-on-deep visual system.
           </p>
-        </section>
-
-        <section className="glass-card mb-4">
-          <nav className="nav nav-pills flex-column flex-lg-row gap-2 menu-nav" aria-label="Main workflow menu">
-            {menuOptions.map((option, index) => (
-              <button
-                key={option.key}
-                type="button"
-                className={`nav-link text-start text-lg-center ${activeMenu === option.key ? "active" : ""}`}
-                onClick={() => setActiveMenu(option.key)}
-              >
-                {index + 1}. {option.label}
-              </button>
-            ))}
-          </nav>
         </section>
 
         <section className="row g-4 mb-4">
