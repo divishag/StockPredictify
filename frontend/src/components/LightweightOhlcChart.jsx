@@ -211,7 +211,7 @@ export default function LightweightOhlcChart({ points, theme }) {
       priceChartRef.current?.timeScale().fitContent();
       volumeChartRef.current?.timeScale().fitContent();
     }
-  }, [mappedData]);
+  }, [mappedData, theme]);
 
   function zoomIn() {
     barSpacingRef.current = Math.min(32, barSpacingRef.current * 1.25);
