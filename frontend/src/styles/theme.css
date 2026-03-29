@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root {
   --bg-deep: #040d1a;
@@ -23,6 +23,7 @@
   --surface-muted: rgba(6, 18, 37, 0.35);
 
   --font-display: "Syne", sans-serif;
+  --font-brand: "Space Grotesk", sans-serif;
   --font-body: "DM Sans", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 

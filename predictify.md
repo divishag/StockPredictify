@@ -1,17 +1,17 @@
-# StockAI — Market Intelligence
+# Predictify
 
-An experimental AI tool that analyzes market trends and stock signals.It provides real-time market data and AI-generated investment insights using Groq's Llama 3.3 70B model.
+An experimental AI tool that analyzes market trends and stock signals. It provides real-time market data and AI-generated investment insights using Groq's Llama 3.3 70B model.
 
-![StockAI](https://img.shields.io/badge/StockAI-v1.0-00d4ff?style=for-the-badge)
+![Predictify](https://img.shields.io/badge/Predictify-v1.0-00d4ff?style=for-the-badge)
 ![HTML](https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white)
 ![CSS](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
 
 ---
 
-## What is StockAI?
+## What is Predictify?
 
-StockAI is a real-time stock analysis web app that combines live market data with AI-generated insights. Enter any stock ticker and get a full analysis — buy/sell signals, price targets, risk scoring, and a detailed written breakdown powered by Llama 3.3.
+Predictify is a real-time stock analysis web app that combines live market data with AI-generated insights. Enter any stock ticker and get a full analysis - buy/sell signals, price targets, risk scoring, and a detailed written breakdown powered by Llama 3.3.
 
 ---
 
@@ -47,7 +47,7 @@ StockAI is a real-time stock analysis web app that combines live market data wit
 ## Project Structure
 
 ```
-StockAI/
+Predictify/
 │
 ├── index.html                  # Landing page
 ├── analyze.template.html       # Analyzer page (rename to analyze.html)

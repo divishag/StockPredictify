@@ -25,3 +25,57 @@ export async function downloadDataset(payload) {
 
   return body;
 }
+
+export async function getTrackedSymbols() {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/tracked`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function getTrackedSymbolDetails(symbol) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/tracked/${encodeURIComponent(symbol)}`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function getTrackedSymbolPreview(symbol) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/tracked/${encodeURIComponent(symbol)}/preview`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function deleteTrackedSymbol(symbol) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/tracked/${encodeURIComponent(symbol)}`, {
+    method: "DELETE",
+  });
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}

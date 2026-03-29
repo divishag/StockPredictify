@@ -5,3 +5,7 @@ js/config.js
 # frontend build artifacts
 frontend/node_modules/
 frontend/dist/
+
+# local environment files
+backend/.env
+.env

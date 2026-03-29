@@ -1,5 +1,11 @@
 export const MENU_OPTIONS = [
   {
+    key: "home",
+    label: "Home",
+    description: "Your command center for preparing data, training models, and testing ideas.",
+    bullets: ["Quickly jump into each stage", "Track outcomes in one flow", "Turn market noise into signals"],
+  },
+  {
     key: "dataset",
     label: "Dataset Preparation",
     description: "Ingest, clean, and normalize market data before training.",
