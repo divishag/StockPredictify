@@ -1,3 +1,3 @@
-from .dataset import DatasetDownloadRequest
+from .dataset import DatasetDownloadRequest, TrainModelRequest
 
-__all__ = ["DatasetDownloadRequest"]
+__all__ = ["DatasetDownloadRequest", "TrainModelRequest"]

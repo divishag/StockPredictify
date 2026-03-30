@@ -79,3 +79,36 @@ export async function deleteTrackedSymbol(symbol) {
 
   return body;
 }
+
+export async function getTrainableStocks() {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/training/stocks`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function trainSelectedStock(symbol, params = {}) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/training/train`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ symbol, ...params }),
+  });
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}

@@ -9,3 +9,6 @@ frontend/dist/
 # local environment files
 backend/.env
 .env
+# python virtual environments
+.venv/
+backend/.venv/

@@ -1,7 +1,14 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas import DatasetDownloadRequest
-from app.services import delete_symbol_data, download_dataset_data, get_symbol_data, get_symbol_preview, list_tracked_symbols
+from app.schemas import DatasetDownloadRequest, TrainModelRequest
+from app.services import (
+    delete_symbol_data,
+    download_dataset_data,
+    get_symbol_data,
+    get_symbol_preview,
+    list_tracked_symbols,
+)
+from app.services.lstm import list_downloaded_stock_symbols, train_model_for_symbol
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 
@@ -69,3 +76,22 @@ def delete_symbol_tracked_data(symbol: str) -> dict:
     if result["deletedRecords"] == 0:
         raise HTTPException(status_code=404, detail={"message": f"No tracked data found for symbol '{symbol}'."})
     return result
+
+
+@router.get("/training/stocks")
+def get_training_stocks() -> dict:
+    symbols = list_downloaded_stock_symbols()
+    return {"items": symbols}
+
+
+@router.post("/training/train")
+def train_selected_stock(payload: TrainModelRequest) -> dict:
+    try:
+        return train_model_for_symbol(
+            payload.symbol,
+            epochs=payload.epochs,
+            batch_size=payload.batchSize,
+            window_size=payload.windowSize,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc

@@ -5,9 +5,11 @@ import { useTheme } from "../context/ThemeContext";
 import {
   deleteTrackedSymbol,
   downloadDataset,
+  getTrainableStocks,
   getTrackedSymbolDetails,
   getTrackedSymbolPreview,
   getTrackedSymbols,
+  trainSelectedStock,
 } from "../services/datasetService";
 import { MENU_OPTIONS } from "../types/workflow";
 
@@ -19,6 +21,20 @@ function formatPrice(value) {
 
   return num.toFixed(2);
 }
+
+const DEFAULT_EPOCHS = 5;
+const DEFAULT_BATCH_SIZE = 2;
+const DEFAULT_WINDOW_SIZE = 60;
+
+const TRAIN_PROGRESS_STEPS = [
+  "Loading dataset...",
+  "Splitting train and test data...",
+  "Scaling features...",
+  "Building sequences...",
+  "Building LSTM model...",
+  "Training model...",
+  "Saving trained model...",
+];
 
 export default function WorkflowPage() {
   const { theme, setTheme } = useTheme();
@@ -41,6 +57,16 @@ export default function WorkflowPage() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isLoadingComparison, setIsLoadingComparison] = useState(false);
   const [symbolMessage, setSymbolMessage] = useState("");
+  const [trainStocks, setTrainStocks] = useState([]);
+  const [selectedTrainStock, setSelectedTrainStock] = useState("");
+  const [isLoadingTrainStocks, setIsLoadingTrainStocks] = useState(false);
+  const [isTrainingModel, setIsTrainingModel] = useState(false);
+  const [trainStatus, setTrainStatus] = useState("");
+  const [trainProgressStep, setTrainProgressStep] = useState(-1);
+  const [trainSummary, setTrainSummary] = useState(null);
+  const [epochs, setEpochs] = useState(DEFAULT_EPOCHS);
+  const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
+  const [windowSize, setWindowSize] = useState(DEFAULT_WINDOW_SIZE);
 
   const selected = useMemo(
     () => MENU_OPTIONS.find((option) => option.key === activeMenu) || MENU_OPTIONS[0],
@@ -78,7 +104,101 @@ export default function WorkflowPage() {
     if (activeMenu === "dataset") {
       void loadTrackedSymbols();
     }
+
+    if (activeMenu === "train") {
+      void loadTrainStocks();
+    }
   }, [activeMenu]);
+
+  async function loadTrainStocks(nextSelectedSymbol = "") {
+    setIsLoadingTrainStocks(true);
+    setTrainStatus("");
+
+    try {
+      const payload = await getTrainableStocks();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setTrainStocks(items);
+
+      if (!items.length) {
+        setSelectedTrainStock("");
+        return;
+      }
+
+      const preferred = nextSelectedSymbol || selectedTrainStock || items[0];
+      const finalSymbol = items.includes(preferred) ? preferred : items[0];
+      setSelectedTrainStock(finalSymbol);
+      setTrainStatus(`Stock selected: ${finalSymbol}`);
+    } catch (error) {
+      setTrainStatus(`Could not load downloaded stocks: ${error.message}`);
+    } finally {
+      setIsLoadingTrainStocks(false);
+    }
+  }
+
+  async function handleTrainModel() {
+    if (!selectedTrainStock) {
+      setTrainStatus("Please select a stock first.");
+      return;
+    }
+
+    if (!Number.isFinite(epochs) || epochs < 1) {
+      setTrainStatus("Please enter a valid epochs value (minimum 1).");
+      return;
+    }
+
+    if (!Number.isFinite(batchSize) || batchSize < 1) {
+      setTrainStatus("Please enter a valid batch size value (minimum 1).");
+      return;
+    }
+
+    if (!Number.isFinite(windowSize) || windowSize < 10) {
+      setTrainStatus("Please enter a valid window size value (minimum 10).");
+      return;
+    }
+
+    setIsTrainingModel(true);
+    setTrainSummary(null);
+    setTrainProgressStep(0);
+    setTrainStatus(TRAIN_PROGRESS_STEPS[0]);
+
+    const progressTicker = window.setInterval(() => {
+      setTrainProgressStep((current) => {
+        if (current < 0) {
+          return 0;
+        }
+
+        const next = Math.min(current + 1, TRAIN_PROGRESS_STEPS.length - 1);
+        setTrainStatus(TRAIN_PROGRESS_STEPS[next]);
+        return next;
+      });
+    }, 900);
+
+    try {
+      const payload = await trainSelectedStock(selectedTrainStock, {
+        epochs,
+        batchSize,
+        windowSize,
+      });
+
+      window.clearInterval(progressTicker);
+      setTrainProgressStep(TRAIN_PROGRESS_STEPS.length);
+      const modelFile = payload?.modelFile || `saved_model_${selectedTrainStock}.keras`;
+      setTrainStatus("Training completed successfully.");
+      setTrainSummary({
+        symbol: payload?.symbol || selectedTrainStock,
+        epochs: payload?.epochs ?? epochs,
+        batchSize: payload?.batchSize ?? batchSize,
+        windowSize: payload?.windowSize ?? windowSize,
+        modelFile,
+      });
+    } catch (error) {
+      window.clearInterval(progressTicker);
+      setTrainProgressStep(-1);
+      setTrainStatus(`Training failed: ${error.message}`);
+    } finally {
+      setIsTrainingModel(false);
+    }
+  }
 
   async function loadTrackedSymbols(nextSelectedSymbol = "") {
     setIsLoadingTracked(true);
@@ -472,6 +592,152 @@ export default function WorkflowPage() {
                       ) : null}
                     </form>
                   </div>
+                </div>
+              ) : activeMenu === "train" ? (
+                <div className="dataset-form">
+                  <div className="d-flex flex-column flex-md-row gap-2 align-items-md-center mb-3">
+                    <label className="form-label dataset-label mb-0" htmlFor="train-stock-select">
+                      Select Downloaded Stock
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-outline-cyan btn-sm"
+                      onClick={() => loadTrainStocks(selectedTrainStock)}
+                      disabled={isLoadingTrainStocks || isTrainingModel}
+                    >
+                      {isLoadingTrainStocks ? "Loading..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  <div className="mb-3">
+                    <select
+                      id="train-stock-select"
+                      className="form-select dataset-input"
+                      value={selectedTrainStock}
+                      onChange={(event) => {
+                        setSelectedTrainStock(event.target.value);
+                        setTrainStatus(`Stock selected: ${event.target.value}`);
+                      }}
+                      disabled={isLoadingTrainStocks || isTrainingModel || trainStocks.length === 0}
+                    >
+                      {trainStocks.length === 0 ? (
+                        <option value="">No downloaded stocks found</option>
+                      ) : (
+                        trainStocks.map((symbol) => (
+                          <option key={symbol} value={symbol}>
+                            {symbol}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <p className="dataset-help mb-0 mt-2">
+                      Only stocks with existing CSV files in the backend data folder are listed.
+                    </p>
+                  </div>
+
+                  <div className="row g-3 mb-3">
+                    <div className="col-12 col-md-4">
+                      <label className="form-label dataset-label" htmlFor="epochs-input">
+                        Epochs
+                      </label>
+                      <input
+                        id="epochs-input"
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="form-control dataset-input"
+                        value={epochs}
+                        onChange={(event) => setEpochs(Number(event.target.value))}
+                        disabled={isTrainingModel}
+                      />
+                      <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_EPOCHS}</p>
+                    </div>
+
+                    <div className="col-12 col-md-4">
+                      <label className="form-label dataset-label" htmlFor="batch-size-input">
+                        Batch Size
+                      </label>
+                      <input
+                        id="batch-size-input"
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="form-control dataset-input"
+                        value={batchSize}
+                        onChange={(event) => setBatchSize(Number(event.target.value))}
+                        disabled={isTrainingModel}
+                      />
+                      <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_BATCH_SIZE}</p>
+                    </div>
+
+                    <div className="col-12 col-md-4">
+                      <label className="form-label dataset-label" htmlFor="window-size-input">
+                        Window Size
+                      </label>
+                      <input
+                        id="window-size-input"
+                        type="number"
+                        min="10"
+                        step="1"
+                        className="form-control dataset-input"
+                        value={windowSize}
+                        onChange={(event) => setWindowSize(Number(event.target.value))}
+                        disabled={isTrainingModel}
+                      />
+                      <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_WINDOW_SIZE}</p>
+                    </div>
+                  </div>
+
+                  <div className="d-flex flex-column flex-md-row gap-2 align-items-md-center">
+                    <button
+                      type="button"
+                      className="btn btn-cyan px-4"
+                      onClick={handleTrainModel}
+                      disabled={isLoadingTrainStocks || isTrainingModel || !selectedTrainStock}
+                    >
+                      {isTrainingModel ? "Training..." : "Train"}
+                    </button>
+                    {trainStatus ? <p className="dataset-status mb-0">{trainStatus}</p> : null}
+                  </div>
+
+                  {isTrainingModel ? (
+                    <ul className="tracked-record-list mt-3 mb-0">
+                      {TRAIN_PROGRESS_STEPS.map((step, index) => (
+                        <li key={step}>
+                          <strong>{index < trainProgressStep ? "Done" : index === trainProgressStep ? "In progress" : "Pending"}</strong>
+                          <span> - {step}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+
+                  {trainSummary ? (
+                    <div className="tracked-details mt-3">
+                      <p className="section-tag mb-2">Training Summary</p>
+                      <ul className="tracked-record-list mb-0">
+                        <li>
+                          <strong>Selected stock</strong>
+                          <span> - {trainSummary.symbol}</span>
+                        </li>
+                        <li>
+                          <strong>Epochs used</strong>
+                          <span> - {trainSummary.epochs}</span>
+                        </li>
+                        <li>
+                          <strong>Batch size used</strong>
+                          <span> - {trainSummary.batchSize}</span>
+                        </li>
+                        <li>
+                          <strong>Window size used</strong>
+                          <span> - {trainSummary.windowSize}</span>
+                        </li>
+                        <li>
+                          <strong>Saved model filename</strong>
+                          <span> - {trainSummary.modelFile}</span>
+                        </li>
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <>
