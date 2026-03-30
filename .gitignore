@@ -12,3 +12,8 @@ backend/.env
 # python virtual environments
 .venv/
 backend/.venv/
+
+# python cache artifacts
+__pycache__/
+*.pyc
+*.pyo
