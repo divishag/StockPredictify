@@ -621,6 +621,164 @@
   background: rgba(6, 18, 37, 0.45);
 }
 
+.help-page {
+  margin-top: 0.5rem;
+}
+
+:root[data-theme="light"] .help-page .mini-tile {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.help-intro {
+  padding: 1.25rem 1.35rem;
+}
+
+.help-lead {
+  color: var(--text-secondary);
+  font-size: 1.02rem;
+  line-height: 1.55;
+  max-width: 58rem;
+}
+
+.help-section-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.help-step-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1.1rem 1.15rem;
+}
+
+.help-step-badge {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--bg-deep);
+  background: linear-gradient(135deg, var(--cyan), #0077ee);
+  box-shadow: 0 0 18px var(--cyan-glow);
+}
+
+.help-step-heading {
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.help-step-text {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+.help-tab-card-title {
+  font-size: 1.02rem;
+  color: var(--cyan);
+  font-family: var(--font-display);
+}
+
+.help-tab-summary {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.help-bullet-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.help-bullet-list li {
+  margin-bottom: 0.45rem;
+}
+
+.help-bullet-list li:last-child {
+  margin-bottom: 0;
+}
+
+.help-callout-title {
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.help-callout {
+  padding: 1.15rem 1.2rem;
+}
+
+.help-callout--muted {
+  border-style: dashed;
+  opacity: 0.98;
+}
+
+.help-disclaimer {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.help-faq-item {
+  padding: 0;
+  overflow: hidden;
+}
+
+.help-faq-summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0.95rem 1.1rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.help-faq-summary::-webkit-details-marker {
+  display: none;
+}
+
+.help-faq-summary::after {
+  content: "";
+  float: right;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.35rem;
+  border-right: 2px solid var(--cyan);
+  border-bottom: 2px solid var(--cyan);
+  transform: rotate(45deg);
+  transition: transform var(--transition);
+}
+
+.help-faq-item[open] .help-faq-summary::after {
+  transform: rotate(-135deg);
+  margin-top: 0.55rem;
+}
+
+.help-faq-answer {
+  padding: 0 1.1rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+  margin-top: 0;
+}
+
 .tile-dot {
   width: 10px;
   height: 10px;

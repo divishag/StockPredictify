@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import LightweightOhlcChart from "../components/LightweightOhlcChart";
 import { useTheme } from "../context/ThemeContext";
+import HelpPage from "./HelpPage";
 import {
   deleteTrackedSymbol,
   downloadDataset,
@@ -739,6 +740,8 @@ export default function WorkflowPage() {
                     </div>
                   ) : null}
                 </div>
+              ) : activeMenu === "help" ? (
+                <HelpPage onNavigate={setActiveMenu} />
               ) : (
                 <>
                   <div className="row g-3">

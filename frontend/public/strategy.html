@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Strategy Agent</title>
+    <!-- Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Plotly for dynamic graphs -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --border-glow: rgba(56, 189, 248, 0.5);
+            --primary: #38bdf8;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --green: #22c55e;
+            --red: #ef4444;
+            --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 10% 20%, rgb(15, 23, 42) 0%, rgb(20, 10, 40) 90%);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        h1 {
+            text-align: center;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        .search-container {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        input[type="text"] {
+            background: rgba(15, 23, 42, 0.5);
+            border: var(--glass-border);
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            width: 300px;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--border-glow);
+        }
+
+        button {
+            background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4);
+        }
+
+        /* Tabs System */
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: var(--glass-border);
+            padding-bottom: 10px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 10px 20px;
+            font-size: 1rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: 0.3s;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255,255,255,0.05);
+            color: white;
+        }
+
+        .tab-btn.active {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--primary);
+            box-shadow: inset 0 0 10px rgba(56, 189, 248, 0.2);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.4s ease forwards;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .layout-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+
+        /* Cards and Text */
+        .signal-box {
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 15px;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .STRONG-BUY { color: var(--green); border: 1px solid var(--green); box-shadow: inset 0 0 15px rgba(34, 197, 94, 0.2); }
+        .CAUTION-SELL { color: var(--red); border: 1px solid var(--red); box-shadow: inset 0 0 15px rgba(239, 68, 68, 0.2); }
+        .HOLD-NEUTRAL { color: var(--text-muted); border: 1px solid var(--text-muted); }
+
+        pre {
+            white-space: pre-wrap;
+            font-family: inherit;
+            line-height: 1.6;
+            color: #cbd5e1;
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary);
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            color: var(--primary);
+            font-weight: bold;
+            margin: 20px 0;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 500px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>📈 Stock Strategy Agent</h1>
+    <p class="subtitle">AI-Driven Stock Analysis and Technical Indicators Interface</p>
+
+    <div class="search-container">
+        <input type="text" id="ticker" placeholder="Enter NSE Symbol (e.g., INFY)" value="INFY">
+        <button onclick="fetchData()">Analyze Stock</button>
+    </div>
+
+    <div class="loader" id="loader">Fetching data and running AI Logic...</div>
+
+    <div id="main-content" style="display: none;">
+        
+        <!-- Interactive Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="tab-btn" onclick="switchTab('comparison')">Market Comparison</button>
+            <button class="tab-btn" onclick="switchTab('dl')">Deep Learning (TCN)</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active layout-grid">
+            <div class="glass-panel">
+                <h3>Agent Recommendation</h3>
+                <div id="signal-box" class="signal-box">-</div>
+                <h3>AI Reasoning</h3>
+                <pre id="reasoning-text">Loading reasoning...</pre>
+                
+                <div style="margin-top:20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1)">
+                    <p style="color:var(--text-muted); font-size:0.9rem;">
+                        <strong>Current Price:</strong> ₹<span id="stat-price">0.00</span><br>
+                        <strong>RSI (14):</strong> <span id="stat-rsi">0.00</span><br>
+                        <strong>EMA (20):</strong> ₹<span id="stat-ema">0.00</span>
+                    </p>
+                </div>
+            </div>
+            
+            <div class="glass-panel">
+                <h3>Price & EMA Chart</h3>
+                <div id="main-chart" class="chart-container"></div>
+            </div>
+        </div>
+
+        <!-- Comparison Tab -->
+        <div id="comparison" class="tab-content">
+            <div class="glass-panel">
+                <h3>Relative Performance (Normalized to 100)</h3>
+                <p style="color:var(--text-muted); margin-bottom:10px;">Compare your selected asset's growth directly against broader market metrics.</p>
+                <div id="comp-chart" class="chart-container" style="height: 400px;"></div>
+            </div>
+        </div>
+
+        <!-- Deep Learning Tab -->
+        <div id="dl" class="tab-content">
+            <div class="glass-panel" style="text-align: center; padding: 40px;">
+                <h3>Temporal Convolutional Network (TCN) Tracker</h3>
+                <p style="color:var(--text-muted);">This module uses a 10-day lookback sequence window to extract deep features.</p>
+                
+                <div style="background: rgba(0,0,0,0.3); padding: 30px; border-radius: 12px; margin-top:20px; display:inline-block;">
+                    <h4 style="margin: 0 0 10px 0; color: #818cf8;">Expected Trend Tomorrow</h4>
+                    <h1 style="margin: 0; color: white;" id="tcn-prediction">-</h1>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+            
+            // Trigger Plotly resize nicely when tabs switch
+            window.dispatchEvent(new Event('resize'));
+        }
+
+        async function fetchData() {
+            const ticker = document.getElementById('ticker').value.trim();
+            if(!ticker) return;
+
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('main-content').style.display = 'none';
+
+            try {
+                // Pointing to your FastAPI server
+                const response = await fetch(`http://localhost:8000/api/strategy/${ticker}`);
+                const data = await response.json();
+
+                if(!response.ok) {
+                    alert('Error: ' + (data.detail || 'Data fetch failed'));
+                    return;
+                }
+
+                populateUI(data);
+                document.getElementById('main-content').style.display = 'block';
+
+            } catch (err) {
+                alert('Connection error! Ensure FastAPI is running on http://localhost:8000. ' + err.message);
+            } finally {
+                document.getElementById('loader').style.display = 'none';
+            }
+        }
+
+        function populateUI(data) {
+            // Signal Box
+            const box = document.getElementById('signal-box');
+            box.textContent = data.signal;
+            box.className = 'signal-box ' + data.signal.replace('/', '-').replace(' ', '-');
+
+            // Text info
+            document.getElementById('reasoning-text').textContent = data.ai_reasoning;
+            document.getElementById('stat-price').textContent = data.latest_metrics.close.toFixed(2);
+            document.getElementById('stat-rsi').textContent = data.latest_metrics.rsi_14.toFixed(2);
+            document.getElementById('stat-ema').textContent = data.latest_metrics.ema_20.toFixed(2);
+            
+            // TCN
+            document.getElementById('tcn-prediction').textContent = data.advanced_tcn_prediction.prediction;
+
+            renderCharts(data.chart_data, data.symbol);
+        }
+
+        function renderCharts(cdata, symbol) {
+            const darkLayout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#94a3b8' },
+                xaxis: { gridcolor: 'rgba(255,255,255,0.05)', rangeslider: {visible: false} },
+                yaxis: { gridcolor: 'rgba(255,255,255,0.05)' },
+                margin: { l: 40, r: 10, t: 30, b: 30 }
+            };
+
+            // Main Candlestick Chart
+            const traceCandle = {
+                x: cdata.dates,
+                open: cdata.open, high: cdata.high, low: cdata.low, close: cdata.close,
+                increasing: {line: {color: '#22c55e'}},
+                decreasing: {line: {color: '#ef4444'}},
+                type: 'candlestick',
+                name: 'Price'
+            };
+            const traceEMA = {
+                x: cdata.dates, y: cdata.ema_20,
+                line: {color: '#f59e0b', width: 2},
+                type: 'scatter', mode: 'lines', name: 'EMA (20)'
+            };
+            Plotly.newPlot('main-chart', [traceCandle, traceEMA], {...darkLayout, title: `${symbol} Price vs EMA`});
+
+            // Comparative Chart
+            const traceStock = { x: cdata.dates, y: cdata.comparisons.stock_normalized, line: {color: '#38bdf8'}, name: symbol };
+            const traceSensex = { x: cdata.dates, y: cdata.comparisons.sensex_normalized, line: {color: '#f59e0b'}, name: 'Sensex' };
+            const traceNifty = { x: cdata.dates, y: cdata.comparisons.nifty_it_normalized, line: {color: '#a855f7'}, name: 'Nifty IT' };
+            
+            Plotly.newPlot('comp-chart', [traceStock, traceSensex, traceNifty], {
+                ...darkLayout, 
+                title: 'Market Growth Comparison',
+                legend: { orientation: 'h', y: 1.1 }
+            });
+        }
+    </script>
+</body>
+</html>
