@@ -134,6 +134,99 @@
   max-width: 100%;
 }
 
+.trained-models-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  padding: 0.85rem;
+}
+
+.trained-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.trained-model-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(6, 18, 37, 0.44);
+  padding: 0.65rem;
+  transition: var(--transition);
+}
+
+.trained-model-item.active {
+  border-color: var(--border-bright);
+  background: rgba(0, 212, 255, 0.14);
+  box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.14);
+}
+
+.trained-model-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.trained-model-name {
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.trained-model-badge {
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 160, 0.45);
+  color: var(--green);
+  padding: 0.1rem 0.45rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+}
+
+.trained-model-meta {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.model-delete-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 13, 26, 0.66);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 1rem;
+}
+
+.model-delete-modal {
+  width: min(520px, 100%);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(6, 18, 37, 0.96) 0%, rgba(5, 15, 32, 0.98) 100%);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.38);
+  padding: 1rem;
+}
+
+.model-delete-target {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 77, 109, 0.1);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  padding: 0.55rem 0.6rem;
+  word-break: break-all;
+}
+
 .dataset-listbox {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -486,6 +579,46 @@
   border-color: rgba(0, 119, 238, 0.28);
 }
 
+:root[data-theme="light"] .trained-models-panel {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border-color: rgba(0, 119, 238, 0.28);
+}
+
+:root[data-theme="light"] .trained-model-item {
+  background: #ffffff;
+  border-color: rgba(0, 119, 238, 0.24);
+}
+
+:root[data-theme="light"] .trained-model-item.active {
+  background: linear-gradient(135deg, rgba(0, 119, 238, 0.2), rgba(0, 174, 255, 0.18));
+  border-color: rgba(0, 119, 238, 0.66);
+  box-shadow: 0 0 0 2px rgba(0, 119, 238, 0.14);
+}
+
+:root[data-theme="light"] .trained-model-name {
+  color: #102f51;
+}
+
+:root[data-theme="light"] .trained-model-meta {
+  color: #3c6288;
+}
+
+:root[data-theme="light"] .model-delete-modal-overlay {
+  background: rgba(22, 41, 64, 0.38);
+}
+
+:root[data-theme="light"] .model-delete-modal {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border-color: rgba(0, 119, 238, 0.34);
+  box-shadow: 0 20px 48px rgba(16, 47, 81, 0.2);
+}
+
+:root[data-theme="light"] .model-delete-target {
+  border-color: rgba(193, 60, 83, 0.35);
+  background: rgba(193, 60, 83, 0.08);
+  color: #0f2f50;
+}
+
 :root[data-theme="light"] .comparison-row {
   background: #ffffff;
   border-color: rgba(0, 119, 238, 0.24);
@@ -595,6 +728,25 @@
   background: var(--surface-muted);
   border: 1px solid var(--border);
   color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .dataset-input:disabled,
+:root[data-theme="dark"] .dataset-input[readonly],
+:root[data-theme="dark"] .dataset-input:disabled.form-control,
+:root[data-theme="dark"] .dataset-input:disabled.form-select {
+  background: var(--surface-muted) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text-primary) !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .dataset-input:disabled:focus,
+:root[data-theme="dark"] .dataset-input[readonly]:focus {
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 0 0 0.2rem var(--cyan-glow);
 }
 
 .dataset-input:focus {

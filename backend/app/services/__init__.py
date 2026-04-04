@@ -6,6 +6,7 @@ from .dataset import (
 	init_dataset_table,
 	list_tracked_symbols,
 )
+from .lstm import init_trained_models_table
 
 __all__ = [
 	"delete_symbol_data",
@@ -13,5 +14,6 @@ __all__ = [
 	"get_symbol_data",
 	"get_symbol_preview",
 	"init_dataset_table",
+	"init_trained_models_table",
 	"list_tracked_symbols",
 ]

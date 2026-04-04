@@ -15,6 +15,13 @@ MAX_DOWNLOAD_RETRIES = int(os.getenv("DATASET_DOWNLOAD_RETRIES", "3"))
 RETRY_BASE_DELAY_SECONDS = float(os.getenv("DATASET_RETRY_BASE_DELAY", "1.5"))
 
 
+class DatasetDownloadError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 def _database_url() -> str:
     database_url = os.getenv("DATABASE_URL")
     if database_url:
@@ -66,42 +73,62 @@ def _is_rate_limited_error(message: str) -> bool:
 
 
 def _download_with_retry(symbol: str, start_date: str):
-    last_error: str | None = None
+    last_error: DatasetDownloadError | None = None
 
     for attempt in range(MAX_DOWNLOAD_RETRIES):
-        frame = yf.download(
-            symbol,
-            start=start_date,
-            progress=False,
-            auto_adjust=False,
-            threads=False,
-        )
+        try:
+            shared_errors = getattr(yf.shared, "_ERRORS", None)
+            if isinstance(shared_errors, dict):
+                shared_errors.pop(symbol, None)
+
+            frame = yf.download(
+                symbol,
+                start=start_date,
+                progress=False,
+                auto_adjust=False,
+                threads=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise DatasetDownloadError(
+                "provider_exception",
+                f"Data provider request failed for {symbol}: {str(exc)}",
+            ) from exc
 
         if not frame.empty:
             return frame
 
-        # yfinance may return empty frame and print an internal error instead of raising.
-        maybe_error = ""
+        # yfinance may return empty frame and record a detailed provider error.
+        provider_error = ""
         try:
-            maybe_error = str(getattr(yf.shared, "_ERRORS", {}).get(symbol, ""))
+            provider_error = str(getattr(yf.shared, "_ERRORS", {}).get(symbol, ""))
         except Exception:  # noqa: BLE001
-            maybe_error = ""
+            provider_error = ""
 
-        if maybe_error and _is_rate_limited_error(maybe_error):
-            last_error = maybe_error
+        if provider_error and _is_rate_limited_error(provider_error):
+            last_error = DatasetDownloadError(
+                "rate_limited",
+                f"Rate limited by data provider for {symbol}: {provider_error}",
+            )
             if attempt < MAX_DOWNLOAD_RETRIES - 1:
                 time.sleep(RETRY_BASE_DELAY_SECONDS * (2**attempt))
                 continue
-            raise RuntimeError(f"Rate limited by data provider for {symbol}: {maybe_error}")
+            raise last_error
 
-        if maybe_error:
-            raise RuntimeError(maybe_error)
+        if provider_error:
+            raise DatasetDownloadError("provider_error", provider_error)
 
-        raise RuntimeError("No data returned for symbol/date.")
+        raise DatasetDownloadError(
+            "empty_data",
+            f"No data returned for symbol '{symbol}' from start date '{start_date}'.",
+        )
 
     if last_error:
-        raise RuntimeError(last_error)
-    raise RuntimeError("No data returned for symbol/date.")
+        raise last_error
+
+    raise DatasetDownloadError(
+        "empty_data",
+        f"No data returned for symbol '{symbol}' from start date '{start_date}'.",
+    )
 
 
 def init_dataset_table() -> None:
@@ -383,10 +410,14 @@ def download_dataset_data(symbols: list[str], start_date: str) -> dict:
                     "file": output_path.name,
                 }
             )
+        except DatasetDownloadError as exc:
+            if output_path.exists():
+                output_path.unlink(missing_ok=True)
+            failed.append({"symbol": symbol, "code": exc.code, "reason": exc.message})
         except Exception as exc:  # noqa: BLE001
             if output_path.exists():
                 output_path.unlink(missing_ok=True)
-            failed.append({"symbol": symbol, "reason": str(exc)})
+            failed.append({"symbol": symbol, "code": "internal_error", "reason": str(exc)})
 
     return {
         "downloaded": downloaded,
