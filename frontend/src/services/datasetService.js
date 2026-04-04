@@ -112,3 +112,59 @@ export async function trainSelectedStock(symbol, params = {}) {
 
   return body;
 }
+
+export async function getTrainingJobStatus(jobId) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/training/train/${encodeURIComponent(jobId)}`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function getTrainedModels() {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/training/models`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function activateTrainedModel(modelFile) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/training/models/${encodeURIComponent(modelFile)}/activate`, {
+    method: "POST",
+  });
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function deleteTrainedModel(modelFile) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/training/models/${encodeURIComponent(modelFile)}`, {
+    method: "DELETE",
+  });
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}

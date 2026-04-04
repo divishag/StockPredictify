@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import load_env_file
 from app.routers import dataset_router, health_router
-from app.services import init_dataset_table
+from app.services import init_dataset_table, init_trained_models_table
 
 app = FastAPI(title="Predictify Backend", version="1.0.0")
 
@@ -29,3 +29,4 @@ app.include_router(dataset_router)
 def on_startup() -> None:
     load_env_file()
     init_dataset_table()
+    init_trained_models_table()

@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import LightweightOhlcChart from "../components/LightweightOhlcChart";
 import { useTheme } from "../context/ThemeContext";
 import {
+  activateTrainedModel,
+  deleteTrainedModel,
   deleteTrackedSymbol,
   downloadDataset,
+  getTrainingJobStatus,
+  getTrainedModels,
   getTrainableStocks,
   getTrackedSymbolDetails,
   getTrackedSymbolPreview,
@@ -22,19 +26,68 @@ function formatPrice(value) {
   return num.toFixed(2);
 }
 
+function formatTimestamp(value) {
+  if (!value) {
+    return "Unknown time";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+
+  return parsed.toLocaleString();
+}
+
+function formatElapsedSeconds(ms) {
+  const numeric = Number(ms);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return null;
+  }
+
+  return (numeric / 1000).toFixed(1);
+}
+
+function isValidEpochValue(value) {
+  return Number.isInteger(value) && value > 0;
+}
+
+const EPOCH_PROGRESS_TICK_MS = 150;
+
+function getEpochProgressIncrement(avgEpochDurationMs) {
+  const duration = Number(avgEpochDurationMs);
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return 1;
+  }
+
+  const ticksPerEpoch = Math.max(1, duration / EPOCH_PROGRESS_TICK_MS);
+  const increment = Math.ceil(96 / ticksPerEpoch);
+  return Math.max(1, Math.min(12, increment));
+}
+
 const DEFAULT_EPOCHS = 5;
 const DEFAULT_BATCH_SIZE = 2;
 const DEFAULT_WINDOW_SIZE = 60;
 
 const TRAIN_PROGRESS_STEPS = [
-  "Loading dataset...",
-  "Splitting train and test data...",
-  "Scaling features...",
-  "Building sequences...",
-  "Building LSTM model...",
-  "Training model...",
-  "Saving trained model...",
+  { key: "load_dataset", label: "Loading dataset..." },
+  { key: "split_data", label: "Splitting train and test data..." },
+  { key: "scale_features", label: "Scaling features..." },
+  { key: "build_sequences", label: "Building sequences..." },
+  { key: "build_model", label: "Building LSTM model..." },
+  { key: "train_model", label: "Training model..." },
+  { key: "save_model", label: "Saving trained model..." },
 ];
+
+const INITIAL_TRAIN_STEPS = TRAIN_PROGRESS_STEPS.map((step) => ({
+  ...step,
+  status: "pending",
+  durationMs: null,
+  progressPct: 0,
+  currentEpoch: null,
+  totalEpochs: null,
+  elapsedMs: null,
+}));
 
 export default function WorkflowPage() {
   const { theme, setTheme } = useTheme();
@@ -62,11 +115,27 @@ export default function WorkflowPage() {
   const [isLoadingTrainStocks, setIsLoadingTrainStocks] = useState(false);
   const [isTrainingModel, setIsTrainingModel] = useState(false);
   const [trainStatus, setTrainStatus] = useState("");
-  const [trainProgressStep, setTrainProgressStep] = useState(-1);
+  const [trainProgressSteps, setTrainProgressSteps] = useState(INITIAL_TRAIN_STEPS);
   const [trainSummary, setTrainSummary] = useState(null);
+  const [trainedModels, setTrainedModels] = useState([]);
+  const [activeModelFile, setActiveModelFile] = useState("");
+  const [isLoadingTrainedModels, setIsLoadingTrainedModels] = useState(false);
+  const [isModelActionPending, setIsModelActionPending] = useState(false);
+  const [modelStatus, setModelStatus] = useState("");
+  const [modelPendingDelete, setModelPendingDelete] = useState(null);
   const [epochs, setEpochs] = useState(DEFAULT_EPOCHS);
   const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
   const [windowSize, setWindowSize] = useState(DEFAULT_WINDOW_SIZE);
+  const [realProgress, setRealProgress] = useState(0);
+  const [epochProgressPct, setEpochProgressPct] = useState(0);
+  const [epochProgressIncrement, setEpochProgressIncrement] = useState(1);
+  const [isEpochTrainingActive, setIsEpochTrainingActive] = useState(false);
+  const completedEpochRef = useRef(0);
+  const epochTimingRef = useRef({
+    lastCompletedEpoch: 0,
+    lastElapsedMs: 0,
+    averageEpochMs: null,
+  });
 
   const selected = useMemo(
     () => MENU_OPTIONS.find((option) => option.key === activeMenu) || MENU_OPTIONS[0],
@@ -107,8 +176,39 @@ export default function WorkflowPage() {
 
     if (activeMenu === "train") {
       void loadTrainStocks();
+      void loadTrainedModels();
     }
   }, [activeMenu]);
+
+  useEffect(() => {
+    if (!isTrainingModel || !isEpochTrainingActive) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setEpochProgressPct((previousPct) => Math.min(99, (Number(previousPct) || 0) + epochProgressIncrement));
+    }, EPOCH_PROGRESS_TICK_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isTrainingModel, isEpochTrainingActive, epochProgressIncrement]);
+
+  async function loadTrainedModels() {
+    setIsLoadingTrainedModels(true);
+
+    try {
+      const payload = await getTrainedModels();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setTrainedModels(items);
+      setActiveModelFile(payload?.activeModel || "");
+      setModelStatus(items.length ? "" : "No trained models found yet.");
+    } catch (error) {
+      setModelStatus(`Could not load trained models: ${error.message}`);
+    } finally {
+      setIsLoadingTrainedModels(false);
+    }
+  }
 
   async function loadTrainStocks(nextSelectedSymbol = "") {
     setIsLoadingTrainStocks(true);
@@ -158,30 +258,117 @@ export default function WorkflowPage() {
 
     setIsTrainingModel(true);
     setTrainSummary(null);
-    setTrainProgressStep(0);
-    setTrainStatus(TRAIN_PROGRESS_STEPS[0]);
-
-    const progressTicker = window.setInterval(() => {
-      setTrainProgressStep((current) => {
-        if (current < 0) {
-          return 0;
-        }
-
-        const next = Math.min(current + 1, TRAIN_PROGRESS_STEPS.length - 1);
-        setTrainStatus(TRAIN_PROGRESS_STEPS[next]);
-        return next;
-      });
-    }, 900);
+    setTrainProgressSteps(INITIAL_TRAIN_STEPS);
+    setRealProgress(0);
+    setEpochProgressPct(0);
+    setEpochProgressIncrement(1);
+    setIsEpochTrainingActive(false);
+    completedEpochRef.current = 0;
+    epochTimingRef.current = {
+      lastCompletedEpoch: 0,
+      lastElapsedMs: 0,
+      averageEpochMs: null,
+    };
+    setTrainStatus("Starting training job...");
 
     try {
-      const payload = await trainSelectedStock(selectedTrainStock, {
+      const startPayload = await trainSelectedStock(selectedTrainStock, {
         epochs,
         batchSize,
         windowSize,
       });
+      const jobId = startPayload?.jobId;
+      if (!jobId) {
+        throw new Error("Backend did not return a training job ID.");
+      }
 
-      window.clearInterval(progressTicker);
-      setTrainProgressStep(TRAIN_PROGRESS_STEPS.length);
+      let completedPayload = null;
+      for (let i = 0; i < 1200; i += 1) {
+        const job = await getTrainingJobStatus(jobId);
+        const steps = Array.isArray(job?.steps) ? job.steps : [];
+        const trainStep = steps.find((item) => item.key === "train_model");
+        const confirmedProgress = Math.max(0, Math.min(100, Number(trainStep?.progressPct) || 0));
+        setRealProgress(confirmedProgress);
+        const totalEpochsValue = Math.max(1, Number(trainStep?.totalEpochs) || Number(epochs) || 1);
+        const completedEpochs = Math.min(totalEpochsValue, Math.floor((confirmedProgress * totalEpochsValue) / 100));
+        const elapsedMs = Number(trainStep?.elapsedMs);
+
+        if (completedEpochs > epochTimingRef.current.lastCompletedEpoch && Number.isFinite(elapsedMs) && elapsedMs > 0) {
+          const epochDelta = Math.max(1, completedEpochs - epochTimingRef.current.lastCompletedEpoch);
+          const elapsedDelta = Math.max(1, elapsedMs - epochTimingRef.current.lastElapsedMs);
+          const latestEpochMs = elapsedDelta / epochDelta;
+
+          const previousAverage = epochTimingRef.current.averageEpochMs;
+          const nextAverage =
+            previousAverage == null ? latestEpochMs : previousAverage * 0.7 + latestEpochMs * 0.3;
+
+          epochTimingRef.current = {
+            lastCompletedEpoch: completedEpochs,
+            lastElapsedMs: elapsedMs,
+            averageEpochMs: nextAverage,
+          };
+          setEpochProgressIncrement(getEpochProgressIncrement(nextAverage));
+        }
+
+        if (completedEpochs > completedEpochRef.current) {
+          completedEpochRef.current = completedEpochs;
+          setEpochProgressPct(0);
+        }
+
+        setIsEpochTrainingActive(trainStep?.status === "in_progress");
+        setTrainProgressSteps(
+          TRAIN_PROGRESS_STEPS.map((step) => {
+            const backendStep = steps.find((item) => item.key === step.key);
+            return {
+              ...step,
+              status: backendStep?.status || "pending",
+              durationMs: backendStep?.durationMs ?? null,
+              progressPct: backendStep?.progressPct ?? 0,
+              currentEpoch: backendStep?.currentEpoch ?? null,
+              totalEpochs: backendStep?.totalEpochs ?? null,
+              elapsedMs: backendStep?.elapsedMs ?? null,
+            };
+          })
+        );
+
+        const runningStep = steps.find((item) => item.status === "in_progress");
+        if (runningStep?.label) {
+          if (runningStep.key === "train_model") {
+            const pct = Math.max(0, Math.min(100, Number(runningStep.progressPct) || 0));
+            const epochText =
+              isValidEpochValue(runningStep.currentEpoch) && isValidEpochValue(runningStep.totalEpochs)
+                ? ` Epoch ${runningStep.currentEpoch}/${runningStep.totalEpochs}.`
+                : "";
+            setTrainStatus(`Training model: ${pct}%${epochText}`);
+          } else {
+            setTrainStatus(runningStep.label);
+          }
+        }
+
+        if (job?.status === "completed") {
+          setRealProgress(100);
+          setEpochProgressPct(100);
+          setEpochProgressIncrement(1);
+          setIsEpochTrainingActive(false);
+          completedPayload = job?.result || null;
+          break;
+        }
+
+        if (job?.status === "failed") {
+          const failedMessage = job?.error?.message || "Training failed.";
+          throw new Error(failedMessage);
+        }
+
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 700);
+        });
+      }
+
+      if (!completedPayload) {
+        throw new Error("Training job timed out before completion.");
+      }
+
+      const payload = completedPayload;
       const modelFile = payload?.modelFile || `saved_model_${selectedTrainStock}.keras`;
       setTrainStatus("Training completed successfully.");
       setTrainSummary({
@@ -191,12 +378,69 @@ export default function WorkflowPage() {
         windowSize: payload?.windowSize ?? windowSize,
         modelFile,
       });
+      await loadTrainedModels();
     } catch (error) {
-      window.clearInterval(progressTicker);
-      setTrainProgressStep(-1);
       setTrainStatus(`Training failed: ${error.message}`);
     } finally {
+      setIsEpochTrainingActive(false);
       setIsTrainingModel(false);
+    }
+  }
+
+  async function handleActivateModel(modelFile) {
+    if (!modelFile) {
+      return;
+    }
+
+    setIsModelActionPending(true);
+    try {
+      const payload = await activateTrainedModel(modelFile);
+      setActiveModelFile(payload?.activeModel || modelFile);
+      setModelStatus(payload?.message || `Active model set to ${modelFile}.`);
+      await loadTrainedModels();
+    } catch (error) {
+      setModelStatus(`Could not activate model: ${error.message}`);
+    } finally {
+      setIsModelActionPending(false);
+    }
+  }
+
+  function requestDeleteModel(model) {
+    if (!model?.modelFile) {
+      return;
+    }
+
+    setModelPendingDelete({
+      modelFile: model.modelFile,
+      symbol: model.symbol || "Unknown",
+    });
+  }
+
+  function cancelDeleteModel() {
+    if (isModelActionPending) {
+      return;
+    }
+
+    setModelPendingDelete(null);
+  }
+
+  async function confirmDeleteModel() {
+    const modelFile = modelPendingDelete?.modelFile;
+    if (!modelFile) {
+      return;
+    }
+
+    setIsModelActionPending(true);
+    try {
+      const payload = await deleteTrainedModel(modelFile);
+      setActiveModelFile(payload?.activeModel || "");
+      setModelStatus(payload?.message || `Model ${modelFile} deleted.`);
+      await loadTrainedModels();
+      setModelPendingDelete(null);
+    } catch (error) {
+      setModelStatus(`Could not delete model: ${error.message}`);
+    } finally {
+      setIsModelActionPending(false);
     }
   }
 
@@ -595,149 +839,260 @@ export default function WorkflowPage() {
                 </div>
               ) : activeMenu === "train" ? (
                 <div className="dataset-form">
-                  <div className="d-flex flex-column flex-md-row gap-2 align-items-md-center mb-3">
-                    <label className="form-label dataset-label mb-0" htmlFor="train-stock-select">
-                      Select Downloaded Stock
-                    </label>
-                    <button
-                      type="button"
-                      className="btn btn-outline-cyan btn-sm"
-                      onClick={() => loadTrainStocks(selectedTrainStock)}
-                      disabled={isLoadingTrainStocks || isTrainingModel}
-                    >
-                      {isLoadingTrainStocks ? "Loading..." : "Refresh"}
-                    </button>
-                  </div>
+                  <div className="row g-3">
+                    <div className="col-12 col-xl-4">
+                      <div className="trained-models-panel h-100">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                          <p className="section-tag mb-0">Model History</p>
+                          <button
+                            type="button"
+                            className="btn btn-outline-cyan btn-sm"
+                            onClick={loadTrainedModels}
+                            disabled={isLoadingTrainedModels || isTrainingModel || isModelActionPending}
+                          >
+                            {isLoadingTrainedModels ? "Loading..." : "Refresh"}
+                          </button>
+                        </div>
 
-                  <div className="mb-3">
-                    <select
-                      id="train-stock-select"
-                      className="form-select dataset-input"
-                      value={selectedTrainStock}
-                      onChange={(event) => {
-                        setSelectedTrainStock(event.target.value);
-                        setTrainStatus(`Stock selected: ${event.target.value}`);
-                      }}
-                      disabled={isLoadingTrainStocks || isTrainingModel || trainStocks.length === 0}
-                    >
-                      {trainStocks.length === 0 ? (
-                        <option value="">No downloaded stocks found</option>
-                      ) : (
-                        trainStocks.map((symbol) => (
-                          <option key={symbol} value={symbol}>
-                            {symbol}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    <p className="dataset-help mb-0 mt-2">
-                      Only stocks with existing CSV files in the backend data folder are listed.
-                    </p>
-                  </div>
+                        <p className="dataset-help mb-2">
+                          Pick exactly one active model for the next backtesting step.
+                        </p>
 
-                  <div className="row g-3 mb-3">
-                    <div className="col-12 col-md-4">
-                      <label className="form-label dataset-label" htmlFor="epochs-input">
-                        Epochs
-                      </label>
-                      <input
-                        id="epochs-input"
-                        type="number"
-                        min="1"
-                        step="1"
-                        className="form-control dataset-input"
-                        value={epochs}
-                        onChange={(event) => setEpochs(Number(event.target.value))}
-                        disabled={isTrainingModel}
-                      />
-                      <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_EPOCHS}</p>
+                        {modelStatus ? <p className="dataset-status mb-2">{modelStatus}</p> : null}
+
+                        {isLoadingTrainedModels ? (
+                          <p className="dataset-help mb-0">Loading trained models...</p>
+                        ) : trainedModels.length === 0 ? (
+                          <p className="dataset-help mb-0">No saved .keras model files available.</p>
+                        ) : (
+                          <div className="trained-model-list" role="list" aria-label="Trained models">
+                            {trainedModels.map((model) => {
+                              const isActive = model.modelFile === activeModelFile;
+
+                              return (
+                                <div
+                                  key={model.modelFile}
+                                  className={`trained-model-item ${isActive ? "active" : ""}`}
+                                  role="listitem"
+                                >
+                                  <div className="trained-model-header">
+                                    <p className="trained-model-name mb-0">{model.symbol || "Unknown"}</p>
+                                    {isActive ? <span className="trained-model-badge">Active</span> : null}
+                                  </div>
+
+                                  <p className="trained-model-meta mb-1">{model.modelFile}</p>
+                                  <p className="trained-model-meta mb-1">Trained: {formatTimestamp(model.trainedAt)}</p>
+                                  <p className="trained-model-meta mb-2">
+                                    Params: E{model.epochs ?? "--"} / B{model.batchSize ?? "--"} / W{model.windowSize ?? "--"}
+                                  </p>
+
+                                  <div className="d-flex gap-2">
+                                    <button
+                                      type="button"
+                                      className="btn btn-cyan btn-sm"
+                                      onClick={() => handleActivateModel(model.modelFile)}
+                                      disabled={isActive || isTrainingModel || isModelActionPending}
+                                    >
+                                      {isActive ? "Selected" : "Activate"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline-danger btn-sm"
+                                      onClick={() => requestDeleteModel(model)}
+                                      disabled={isTrainingModel || isModelActionPending}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="col-12 col-md-4">
-                      <label className="form-label dataset-label" htmlFor="batch-size-input">
-                        Batch Size
-                      </label>
-                      <input
-                        id="batch-size-input"
-                        type="number"
-                        min="1"
-                        step="1"
-                        className="form-control dataset-input"
-                        value={batchSize}
-                        onChange={(event) => setBatchSize(Number(event.target.value))}
-                        disabled={isTrainingModel}
-                      />
-                      <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_BATCH_SIZE}</p>
-                    </div>
+                    <div className="col-12 col-xl-8">
+                      <div className="d-flex flex-column flex-md-row gap-2 align-items-md-center mb-3">
+                        <label className="form-label dataset-label mb-0" htmlFor="train-stock-select">
+                          Select Downloaded Stock
+                        </label>
+                        <button
+                          type="button"
+                          className="btn btn-outline-cyan btn-sm"
+                          onClick={() => loadTrainStocks(selectedTrainStock)}
+                          disabled={isLoadingTrainStocks || isTrainingModel}
+                        >
+                          {isLoadingTrainStocks ? "Loading..." : "Refresh"}
+                        </button>
+                      </div>
 
-                    <div className="col-12 col-md-4">
-                      <label className="form-label dataset-label" htmlFor="window-size-input">
-                        Window Size
-                      </label>
-                      <input
-                        id="window-size-input"
-                        type="number"
-                        min="10"
-                        step="1"
-                        className="form-control dataset-input"
-                        value={windowSize}
-                        onChange={(event) => setWindowSize(Number(event.target.value))}
-                        disabled={isTrainingModel}
-                      />
-                      <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_WINDOW_SIZE}</p>
+                      <div className="mb-3">
+                        <select
+                          id="train-stock-select"
+                          className="form-select dataset-input"
+                          value={selectedTrainStock}
+                          onChange={(event) => {
+                            setSelectedTrainStock(event.target.value);
+                            setTrainStatus(`Stock selected: ${event.target.value}`);
+                          }}
+                          disabled={isLoadingTrainStocks || isTrainingModel || trainStocks.length === 0}
+                        >
+                          {trainStocks.length === 0 ? (
+                            <option value="">No downloaded stocks found</option>
+                          ) : (
+                            trainStocks.map((symbol) => (
+                              <option key={symbol} value={symbol}>
+                                {symbol}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                        <p className="dataset-help mb-0 mt-2">
+                          Only stocks with existing CSV files in the backend data folder are listed.
+                        </p>
+                      </div>
+
+                      <div className="row g-3 mb-3">
+                        <div className="col-12 col-md-4">
+                          <label className="form-label dataset-label" htmlFor="epochs-input">
+                            Epochs
+                          </label>
+                          <input
+                            id="epochs-input"
+                            type="number"
+                            min="1"
+                            step="1"
+                            className="form-control dataset-input"
+                            value={epochs}
+                            onChange={(event) => setEpochs(Number(event.target.value))}
+                            disabled={isTrainingModel}
+                          />
+                          <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_EPOCHS}</p>
+                        </div>
+
+                        <div className="col-12 col-md-4">
+                          <label className="form-label dataset-label" htmlFor="batch-size-input">
+                            Batch Size
+                          </label>
+                          <input
+                            id="batch-size-input"
+                            type="number"
+                            min="1"
+                            step="1"
+                            className="form-control dataset-input"
+                            value={batchSize}
+                            onChange={(event) => setBatchSize(Number(event.target.value))}
+                            disabled={isTrainingModel}
+                          />
+                          <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_BATCH_SIZE}</p>
+                        </div>
+
+                        <div className="col-12 col-md-4">
+                          <label className="form-label dataset-label" htmlFor="window-size-input">
+                            Window Size
+                          </label>
+                          <input
+                            id="window-size-input"
+                            type="number"
+                            min="10"
+                            step="1"
+                            className="form-control dataset-input"
+                            value={windowSize}
+                            onChange={(event) => setWindowSize(Number(event.target.value))}
+                            disabled={isTrainingModel}
+                          />
+                          <p className="dataset-help mb-0 mt-1">Default: {DEFAULT_WINDOW_SIZE}</p>
+                        </div>
+                      </div>
+
+                      <div className="d-flex flex-column flex-md-row gap-2 align-items-md-center">
+                        <button
+                          type="button"
+                          className="btn btn-cyan px-4"
+                          onClick={handleTrainModel}
+                          disabled={isLoadingTrainStocks || isTrainingModel || !selectedTrainStock}
+                        >
+                          {isTrainingModel ? "Training..." : "Train"}
+                        </button>
+                        {trainStatus ? <p className="dataset-status mb-0">{trainStatus}</p> : null}
+                      </div>
+
+                      {isTrainingModel ? (
+                        <ul className="tracked-record-list mt-3 mb-0">
+                          {trainProgressSteps.map((step) => (
+                            <li key={step.key}>
+                              <strong>
+                                {step.status === "completed"
+                                  ? "Done"
+                                  : step.status === "in_progress"
+                                    ? "In progress"
+                                    : step.status === "failed"
+                                      ? "Failed"
+                                      : "Pending"}
+                              </strong>
+                              <span> - {step.label}</span>
+                              {step.key === "train_model" ? (
+                                <>
+                                  <span>{` ${Math.max(0, Math.min(100, Number(epochProgressPct) || 0))}%`}</span>
+                                  <span>{` | Overall ${Math.max(0, Math.min(100, Number(realProgress) || 0))}%`}</span>
+                                  {isValidEpochValue(step.currentEpoch) && isValidEpochValue(step.totalEpochs) ? (
+                                    <span>{` | Epoch ${step.currentEpoch} / ${step.totalEpochs}`}</span>
+                                  ) : null}
+                                  {Number.isFinite(Number(step.elapsedMs)) ? (
+                                    <span>{` | ${formatElapsedSeconds(step.elapsedMs)}s elapsed`}</span>
+                                  ) : null}
+                                  <div className="progress mt-2" style={{ height: "8px", maxWidth: "420px" }}>
+                                    <div
+                                      className="progress-bar bg-info"
+                                      role="progressbar"
+                                      style={{
+                                        width: `${Math.max(0, Math.min(100, Number(realProgress) || 0))}%`,
+                                      }}
+                                      aria-valuenow={Math.max(0, Math.min(100, Number(realProgress) || 0))}
+                                      aria-valuemin="0"
+                                      aria-valuemax="100"
+                                    />
+                                  </div>
+                                </>
+                              ) : null}
+                              {step.status === "completed" && Number.isFinite(step.durationMs) ? (
+                                <span> ({(step.durationMs / 1000).toFixed(1)}s)</span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+
+                      {trainSummary ? (
+                        <div className="tracked-details mt-3">
+                          <p className="section-tag mb-2">Training Summary</p>
+                          <ul className="tracked-record-list mb-0">
+                            <li>
+                              <strong>Selected stock</strong>
+                              <span> - {trainSummary.symbol}</span>
+                            </li>
+                            <li>
+                              <strong>Epochs used</strong>
+                              <span> - {trainSummary.epochs}</span>
+                            </li>
+                            <li>
+                              <strong>Batch size used</strong>
+                              <span> - {trainSummary.batchSize}</span>
+                            </li>
+                            <li>
+                              <strong>Window size used</strong>
+                              <span> - {trainSummary.windowSize}</span>
+                            </li>
+                            <li>
+                              <strong>Saved model filename</strong>
+                              <span> - {trainSummary.modelFile}</span>
+                            </li>
+                          </ul>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-
-                  <div className="d-flex flex-column flex-md-row gap-2 align-items-md-center">
-                    <button
-                      type="button"
-                      className="btn btn-cyan px-4"
-                      onClick={handleTrainModel}
-                      disabled={isLoadingTrainStocks || isTrainingModel || !selectedTrainStock}
-                    >
-                      {isTrainingModel ? "Training..." : "Train"}
-                    </button>
-                    {trainStatus ? <p className="dataset-status mb-0">{trainStatus}</p> : null}
-                  </div>
-
-                  {isTrainingModel ? (
-                    <ul className="tracked-record-list mt-3 mb-0">
-                      {TRAIN_PROGRESS_STEPS.map((step, index) => (
-                        <li key={step}>
-                          <strong>{index < trainProgressStep ? "Done" : index === trainProgressStep ? "In progress" : "Pending"}</strong>
-                          <span> - {step}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-
-                  {trainSummary ? (
-                    <div className="tracked-details mt-3">
-                      <p className="section-tag mb-2">Training Summary</p>
-                      <ul className="tracked-record-list mb-0">
-                        <li>
-                          <strong>Selected stock</strong>
-                          <span> - {trainSummary.symbol}</span>
-                        </li>
-                        <li>
-                          <strong>Epochs used</strong>
-                          <span> - {trainSummary.epochs}</span>
-                        </li>
-                        <li>
-                          <strong>Batch size used</strong>
-                          <span> - {trainSummary.batchSize}</span>
-                        </li>
-                        <li>
-                          <strong>Window size used</strong>
-                          <span> - {trainSummary.windowSize}</span>
-                        </li>
-                        <li>
-                          <strong>Saved model filename</strong>
-                          <span> - {trainSummary.modelFile}</span>
-                        </li>
-                      </ul>
-                    </div>
-                  ) : null}
                 </div>
               ) : (
                 <>
@@ -766,6 +1121,39 @@ export default function WorkflowPage() {
           </div>
         </section>
       </main>
+
+      {modelPendingDelete ? (
+        <div className="model-delete-modal-overlay" role="presentation">
+          <div className="model-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-model-title">
+            <p className="section-tag mb-2">Confirm Deletion</p>
+            <h3 id="delete-model-title" className="mb-2">Delete trained model?</h3>
+            <p className="dataset-help mb-2">
+              You are about to delete the model for <strong>{modelPendingDelete.symbol}</strong>.
+            </p>
+            <div className="model-delete-target mb-3">{modelPendingDelete.modelFile}</div>
+            <p className="dataset-help mb-3">This action cannot be undone.</p>
+
+            <div className="d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                className="btn btn-outline-cyan"
+                onClick={cancelDeleteModel}
+                disabled={isModelActionPending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-danger"
+                onClick={confirmDeleteModel}
+                disabled={isModelActionPending}
+              >
+                {isModelActionPending ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
