@@ -3,7 +3,7 @@ import threading
 import time
 from uuid import uuid4
 
-from app.schemas import DatasetDownloadRequest, TrainModelRequest
+from app.schemas import BacktestRequest, BacktestRunResponse, DatasetDownloadRequest, TrainModelRequest
 from app.services import (
     delete_symbol_data,
     download_dataset_data,
@@ -11,6 +11,8 @@ from app.services import (
     get_symbol_preview,
     list_tracked_symbols,
 )
+from app.services.backtest import run_backtest_strategy
+from app.services.backtest_history import save_backtest_run
 from app.services.lstm import (
     delete_trained_model,
     list_downloaded_stock_symbols,
@@ -168,19 +170,32 @@ def download_dataset(payload: DatasetDownloadRequest) -> dict:
     result = download_dataset_data(payload.symbols, payload.startDate.isoformat())
 
     if not result["downloaded"]:
-        all_rate_limited = bool(result["failed"]) and all(
-            str(item.get("code", "")) == "rate_limited"
-            for item in result["failed"]
-        )
-
-        status_code = 429 if all_rate_limited else 502
+        # Analyze failed downloads to determine appropriate error response
+        failed_codes = {str(item.get("code", "")) for item in result["failed"]} if result["failed"] else set()
+        
+        # Check for rate limiting (retried but still failing after backoff)
+        all_rate_limited = "rate_limited" in failed_codes and len(failed_codes) == 1
         if all_rate_limited:
+            status_code = 429
             message = "Rate limited by data provider. Please wait 30-60 seconds and try again."
-        else:
+        # Check for connection errors (transient network issues)
+        elif "connection_error" in failed_codes:
+            status_code = 503
+            message = "Temporary connection issue with data provider. Please try again."
+        # Check for permanent errors (invalid symbol, etc.)
+        elif "provider_error" in failed_codes or "empty_data" in failed_codes:
+            status_code = 422
             first_reason = ""
             if result["failed"]:
                 first_reason = str(result["failed"][0].get("reason", "")).strip()
-            message = first_reason or "No datasets were downloaded due to an unknown provider error."
+            message = first_reason or "Data provider returned no data for the requested symbols."
+        # Default to service error for mixed or unknown failures
+        else:
+            status_code = 502
+            first_reason = ""
+            if result["failed"]:
+                first_reason = str(result["failed"][0].get("reason", "")).strip()
+            message = first_reason or "No datasets were downloaded due to a provider error."
 
         raise HTTPException(
             status_code=status_code,
@@ -283,3 +298,21 @@ def remove_trained_model(model_file: str) -> dict:
         return delete_trained_model(model_file)
     except RuntimeError as exc:
         raise HTTPException(status_code=404, detail={"message": str(exc)}) from exc
+
+
+@router.post("/backtest", response_model=BacktestRunResponse)
+def run_backtest(payload: BacktestRequest) -> BacktestRunResponse:
+    try:
+        result = run_backtest_strategy(payload.model_dump())
+        stored = save_backtest_run(result)
+        result["id"] = stored["id"]
+        result["backtestAt"] = stored["backtestAt"]
+        return BacktestRunResponse(**result)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"message": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail={"message": f"Backtest failed: {str(exc)}"}) from exc

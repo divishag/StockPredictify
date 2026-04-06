@@ -4,15 +4,19 @@ import LightweightOhlcChart from "../components/LightweightOhlcChart";
 import { useTheme } from "../context/ThemeContext";
 import {
   activateTrainedModel,
+  deleteBacktestById,
   deleteTrainedModel,
   deleteTrackedSymbol,
   downloadDataset,
+  getBacktestById,
+  getBacktests,
   getTrainingJobStatus,
   getTrainedModels,
   getTrainableStocks,
   getTrackedSymbolDetails,
   getTrackedSymbolPreview,
   getTrackedSymbols,
+  runBacktestStrategy,
   trainSelectedStock,
 } from "../services/datasetService";
 import { MENU_OPTIONS } from "../types/workflow";
@@ -24,6 +28,19 @@ function formatPrice(value) {
   }
 
   return num.toFixed(2);
+}
+
+function formatCurrency(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return "--";
+  }
+
+  const formatted = Math.abs(num).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${num < 0 ? "-" : ""}$${formatted}`;
 }
 
 function formatTimestamp(value) {
@@ -68,6 +85,11 @@ function getEpochProgressIncrement(avgEpochDurationMs) {
 const DEFAULT_EPOCHS = 5;
 const DEFAULT_BATCH_SIZE = 2;
 const DEFAULT_WINDOW_SIZE = 60;
+const DEFAULT_BACKTEST_CASH = 100000;
+const DEFAULT_BACKTEST_MIN_STREAK = 3;
+const DEFAULT_BACKTEST_RSI_WINDOW = 14;
+const DEFAULT_BACKTEST_LOWER = 30;
+const DEFAULT_BACKTEST_UPPER = 70;
 
 const TRAIN_PROGRESS_STEPS = [
   { key: "load_dataset", label: "Loading dataset..." },
@@ -110,6 +132,8 @@ export default function WorkflowPage() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isLoadingComparison, setIsLoadingComparison] = useState(false);
   const [symbolMessage, setSymbolMessage] = useState("");
+  const [symbolPendingDelete, setSymbolPendingDelete] = useState("");
+  const [isSymbolDeletePending, setIsSymbolDeletePending] = useState(false);
   const [trainStocks, setTrainStocks] = useState([]);
   const [selectedTrainStock, setSelectedTrainStock] = useState("");
   const [isLoadingTrainStocks, setIsLoadingTrainStocks] = useState(false);
@@ -130,7 +154,26 @@ export default function WorkflowPage() {
   const [epochProgressPct, setEpochProgressPct] = useState(0);
   const [epochProgressIncrement, setEpochProgressIncrement] = useState(1);
   const [isEpochTrainingActive, setIsEpochTrainingActive] = useState(false);
+  const [isBacktesting, setIsBacktesting] = useState(false);
+  const [backtestStatus, setBacktestStatus] = useState("");
+  const [backtestRunError, setBacktestRunError] = useState("");
+  const [backtestResult, setBacktestResult] = useState(null);
+  const [backtestHistory, setBacktestHistory] = useState([]);
+  const [selectedBacktestId, setSelectedBacktestId] = useState(null);
+  const [isLoadingBacktestHistory, setIsLoadingBacktestHistory] = useState(false);
+  const [isLoadingBacktestDetails, setIsLoadingBacktestDetails] = useState(false);
+  const [backtestDeletePendingId, setBacktestDeletePendingId] = useState(null);
+  const [backtestPendingDelete, setBacktestPendingDelete] = useState(null);
+  const [backtestHistoryStatus, setBacktestHistoryStatus] = useState("");
+  const [showBacktestCarouselNav, setShowBacktestCarouselNav] = useState(false);
+  const [backtestSymbol, setBacktestSymbol] = useState("");
+  const [backtestInitialCash, setBacktestInitialCash] = useState(DEFAULT_BACKTEST_CASH);
+  const [backtestRsiWindow, setBacktestRsiWindow] = useState(DEFAULT_BACKTEST_RSI_WINDOW);
+  const [backtestLowerBound, setBacktestLowerBound] = useState(DEFAULT_BACKTEST_LOWER);
+  const [backtestUpperBound, setBacktestUpperBound] = useState(DEFAULT_BACKTEST_UPPER);
+  const [backtestMinStreak, setBacktestMinStreak] = useState(DEFAULT_BACKTEST_MIN_STREAK);
   const completedEpochRef = useRef(0);
+  const backtestHistoryBarRef = useRef(null);
   const epochTimingRef = useRef({
     lastCompletedEpoch: 0,
     lastElapsedMs: 0,
@@ -169,6 +212,59 @@ export default function WorkflowPage() {
 
   const latestPoint = allPreviewPoints.at(-1);
 
+  const backtestChartPoints = useMemo(() => {
+    const rows = Array.isArray(backtestResult?.chartData) ? backtestResult.chartData : [];
+
+    return rows
+      .map((row) => ({
+        date: row.date,
+        open: Number(row.open),
+        high: Number(row.high),
+        low: Number(row.low),
+        close: Number(row.close),
+        volume: Number(row.volume || 0),
+      }))
+      .filter(
+        (row) =>
+          row.date &&
+          Number.isFinite(row.open) &&
+          Number.isFinite(row.high) &&
+          Number.isFinite(row.low) &&
+          Number.isFinite(row.close)
+      );
+  }, [backtestResult]);
+
+  const backtestTradeMarkers = useMemo(() => {
+    const trades = Array.isArray(backtestResult?.trades) ? backtestResult.trades : [];
+
+    return trades
+      .map((trade) => ({
+        date: trade.date,
+        action: String(trade.action || "").toLowerCase(),
+        price: Number(trade.price),
+        pnl: trade.pnl == null ? null : Number(trade.pnl),
+        tradeId: Number(trade.tradeId),
+        shares: Number(trade.shares),
+      }))
+      .filter(
+        (trade) =>
+          trade.date &&
+          (trade.action === "buy" || trade.action === "sell") &&
+          Number.isFinite(trade.price)
+      );
+  }, [backtestResult]);
+
+  const backtestEquityPoints = useMemo(() => {
+    const rows = Array.isArray(backtestResult?.equityCurve) ? backtestResult.equityCurve : [];
+
+    return rows
+      .map((row) => ({
+        date: row.date,
+        equity: Number(row.equity),
+      }))
+      .filter((row) => row.date && Number.isFinite(row.equity));
+  }, [backtestResult]);
+
   useEffect(() => {
     if (activeMenu === "dataset") {
       void loadTrackedSymbols();
@@ -178,7 +274,29 @@ export default function WorkflowPage() {
       void loadTrainStocks();
       void loadTrainedModels();
     }
+
+    if (activeMenu === "backtest") {
+      void loadTrainStocks();
+      void loadTrainedModels();
+      void loadBacktestHistory();
+      setBacktestStatus("");
+    }
   }, [activeMenu]);
+
+  useEffect(() => {
+    if (backtestSymbol) {
+      return;
+    }
+
+    if (selectedTrainStock) {
+      setBacktestSymbol(selectedTrainStock);
+      return;
+    }
+
+    if (trainStocks.length > 0) {
+      setBacktestSymbol(trainStocks[0]);
+    }
+  }, [trainStocks, selectedTrainStock, backtestSymbol]);
 
   useEffect(() => {
     if (!isTrainingModel || !isEpochTrainingActive) {
@@ -193,6 +311,49 @@ export default function WorkflowPage() {
       window.clearInterval(intervalId);
     };
   }, [isTrainingModel, isEpochTrainingActive, epochProgressIncrement]);
+
+  useEffect(() => {
+    if (activeMenu !== "backtest") {
+      setShowBacktestCarouselNav(false);
+      return;
+    }
+
+    function updateCarouselNavVisibility() {
+      const strip = backtestHistoryBarRef.current;
+      if (!strip) {
+        setShowBacktestCarouselNav(false);
+        return;
+      }
+
+      const hasHorizontalOverflow = strip.scrollWidth - strip.clientWidth > 1;
+      setShowBacktestCarouselNav(hasHorizontalOverflow);
+    }
+
+    updateCarouselNavVisibility();
+    const rafId = window.requestAnimationFrame(updateCarouselNavVisibility);
+
+    const strip = backtestHistoryBarRef.current;
+    const resizeObserver =
+      strip && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            updateCarouselNavVisibility();
+          })
+        : null;
+
+    if (strip && resizeObserver) {
+      resizeObserver.observe(strip);
+    }
+
+    window.addEventListener("resize", updateCarouselNavVisibility);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", updateCarouselNavVisibility);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
+  }, [activeMenu, backtestHistory.length, isLoadingBacktestHistory]);
 
   async function loadTrainedModels() {
     setIsLoadingTrainedModels(true);
@@ -232,6 +393,58 @@ export default function WorkflowPage() {
       setTrainStatus(`Could not load downloaded stocks: ${error.message}`);
     } finally {
       setIsLoadingTrainStocks(false);
+    }
+  }
+
+  async function loadBacktestDetails(backtestId) {
+    const id = Number(backtestId);
+    if (!Number.isFinite(id) || id <= 0) {
+      return;
+    }
+
+    setIsLoadingBacktestDetails(true);
+    try {
+      const payload = await getBacktestById(id);
+      setBacktestResult(payload || null);
+      setSelectedBacktestId(id);
+      setBacktestStatus("");
+    } catch (error) {
+      setBacktestStatus(`Could not load backtest details: ${error.message}`);
+    } finally {
+      setIsLoadingBacktestDetails(false);
+    }
+  }
+
+  async function loadBacktestHistory(preferredBacktestId = null) {
+    setIsLoadingBacktestHistory(true);
+    setBacktestHistoryStatus("");
+
+    try {
+      const payload = await getBacktests();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setBacktestHistory(items);
+
+      if (!items.length) {
+        setSelectedBacktestId(null);
+        setBacktestResult(null);
+        setBacktestHistoryStatus("No previous backtests found yet.");
+        return;
+      }
+
+      const preferred = Number(preferredBacktestId);
+      const existingSelected = Number(selectedBacktestId);
+      const candidateId =
+        (Number.isFinite(preferred) && items.some((item) => Number(item.id) === preferred) && preferred) ||
+        (Number.isFinite(existingSelected) && items.some((item) => Number(item.id) === existingSelected) && existingSelected) ||
+        Number(items[0].id);
+
+      if (Number.isFinite(candidateId) && candidateId > 0) {
+        await loadBacktestDetails(candidateId);
+      }
+    } catch (error) {
+      setBacktestHistoryStatus(`Could not load backtest history: ${error.message}`);
+    } finally {
+      setIsLoadingBacktestHistory(false);
     }
   }
 
@@ -537,11 +750,29 @@ export default function WorkflowPage() {
     }
   }
 
-  async function handleDeleteSymbol(symbol) {
-    const confirmed = window.confirm(`Delete all tracked data for ${symbol}?`);
-    if (!confirmed) {
+  function requestDeleteSymbol(symbol) {
+    if (!symbol || isSymbolDeletePending) {
       return;
     }
+
+    setSymbolPendingDelete(String(symbol).trim().toUpperCase());
+  }
+
+  function cancelDeleteSymbol() {
+    if (isSymbolDeletePending) {
+      return;
+    }
+
+    setSymbolPendingDelete("");
+  }
+
+  async function confirmDeleteSymbol() {
+    const symbol = String(symbolPendingDelete || "").trim().toUpperCase();
+    if (!symbol) {
+      return;
+    }
+
+    setIsSymbolDeletePending(true);
 
     try {
       const payload = await deleteTrackedSymbol(symbol);
@@ -549,8 +780,11 @@ export default function WorkflowPage() {
         `Deleted ${payload.deletedRecords || 0} records and ${payload.deletedFiles || 0} files for ${payload.symbol || symbol}.`
       );
       await loadTrackedSymbols("");
+      setSymbolPendingDelete("");
     } catch (error) {
       setSymbolMessage(`Delete failed: ${error.message}`);
+    } finally {
+      setIsSymbolDeletePending(false);
     }
   }
 
@@ -572,25 +806,157 @@ export default function WorkflowPage() {
       return;
     }
 
-    setIsDownloading(true);
+    // Clear previous messages and start download
     setDownloadMessage("Downloading data...");
+    setIsDownloading(true);
 
     try {
       const payload = await downloadDataset({ symbols, startDate });
       const downloadedCount = Array.isArray(payload?.downloaded) ? payload.downloaded.length : 0;
       const failedCount = Array.isArray(payload?.failed) ? payload.failed.length : 0;
+      const refreshedSymbol = payload?.downloaded?.[0]?.symbol || symbols[0];
       setDownloadMessage(
         `Download completed: ${downloadedCount} succeeded, ${failedCount} failed for ${symbols.join(", ")}.`
       );
 
       if (downloadedCount > 0) {
-        await loadTrackedSymbols(symbols[0]);
+        await loadTrackedSymbols(refreshedSymbol);
       }
     } catch (error) {
-      setDownloadMessage(`Backend request failed: ${error.message}`);
+      // Display the backend error message directly (already includes descriptive context)
+      const errorMsg = error.message || "Unknown download error";
+      setDownloadMessage(`Download failed: ${errorMsg}`);
     } finally {
       setIsDownloading(false);
     }
+  }
+
+  async function handleRunBacktest() {
+    if (!activeModelFile) {
+      setBacktestStatus("Please activate a trained model in the Train Model step before backtesting.");
+      return;
+    }
+
+    if (!Number.isFinite(backtestInitialCash) || Number(backtestInitialCash) <= 0) {
+      setBacktestStatus("Initial cash must be a positive number.");
+      return;
+    }
+
+    if (!Number.isFinite(backtestRsiWindow) || Number(backtestRsiWindow) < 2) {
+      setBacktestStatus("RSI window must be at least 2.");
+      return;
+    }
+
+    if (!Number.isFinite(backtestLowerBound) || !Number.isFinite(backtestUpperBound)) {
+      setBacktestStatus("RSI bounds must be valid numbers.");
+      return;
+    }
+
+    if (Number(backtestLowerBound) >= Number(backtestUpperBound)) {
+      setBacktestStatus("RSI lower bound must be less than upper bound.");
+      return;
+    }
+
+    if (!Number.isFinite(backtestMinStreak) || Number(backtestMinStreak) < 1) {
+      setBacktestStatus("Minimum consecutive predictions must be at least 1.");
+      return;
+    }
+
+    setIsBacktesting(true);
+    setBacktestRunError("");
+    setBacktestResult(null);
+    setBacktestStatus("Running backtest with active model...");
+
+    try {
+      const payload = await runBacktestStrategy({
+        symbol: backtestSymbol || undefined,
+        initialCash: Number(backtestInitialCash),
+        rsiWindow: Number(backtestRsiWindow),
+        lowerBound: Number(backtestLowerBound),
+        upperBound: Number(backtestUpperBound),
+        minConsecutivePredictions: Number(backtestMinStreak),
+      });
+
+      setBacktestResult(payload || null);
+      const createdId = Number(payload?.id);
+      if (Number.isFinite(createdId) && createdId > 0) {
+        setSelectedBacktestId(createdId);
+      }
+      setBacktestRunError("");
+      setBacktestStatus("Backtest completed successfully.");
+      await loadBacktestHistory(Number.isFinite(createdId) && createdId > 0 ? createdId : null);
+    } catch (error) {
+      setBacktestRunError(error.message || "Backtest request failed.");
+      setBacktestStatus(`Backtest failed: ${error.message}`);
+    } finally {
+      setIsBacktesting(false);
+    }
+  }
+
+  function requestDeleteBacktest(item) {
+    const backtestId = Number(item?.id);
+    if (!Number.isFinite(backtestId) || backtestId <= 0) {
+      return;
+    }
+
+    setBacktestPendingDelete(item);
+  }
+
+  function cancelDeleteBacktest() {
+    if (backtestDeletePendingId != null) {
+      return;
+    }
+
+    setBacktestPendingDelete(null);
+  }
+
+  async function confirmDeleteBacktest() {
+    const item = backtestPendingDelete;
+    const backtestId = Number(item?.id);
+    if (!Number.isFinite(backtestId) || backtestId <= 0) {
+      return;
+    }
+
+    setBacktestDeletePendingId(backtestId);
+    setBacktestHistoryStatus("");
+
+    try {
+      await deleteBacktestById(backtestId);
+
+      const remaining = backtestHistory.filter((entry) => Number(entry.id) !== backtestId);
+      setBacktestHistory(remaining);
+
+      const wasSelected = Number(selectedBacktestId) === backtestId;
+      if (!remaining.length) {
+        setSelectedBacktestId(null);
+        setBacktestResult(null);
+        setBacktestHistoryStatus("No previous backtests found yet.");
+      } else if (wasSelected) {
+        const fallbackId = Number(remaining[0].id);
+        if (Number.isFinite(fallbackId) && fallbackId > 0) {
+          await loadBacktestDetails(fallbackId);
+        }
+      }
+
+      setBacktestStatus("Backtest deleted successfully.");
+      setBacktestPendingDelete(null);
+    } catch (error) {
+      setBacktestHistoryStatus(`Could not delete backtest: ${error.message}`);
+    } finally {
+      setBacktestDeletePendingId(null);
+    }
+  }
+
+  function scrollBacktestHistory(direction) {
+    if (!backtestHistoryBarRef.current) {
+      return;
+    }
+
+    const step = Math.max(220, Math.floor(backtestHistoryBarRef.current.clientWidth * 0.55));
+    backtestHistoryBarRef.current.scrollBy({
+      left: direction === "left" ? -step : step,
+      behavior: "smooth",
+    });
   }
 
   return (
@@ -687,7 +1053,7 @@ export default function WorkflowPage() {
                             <button
                               type="button"
                               className="btn btn-outline-danger btn-sm symbol-delete-btn"
-                              onClick={() => handleDeleteSymbol(item.symbol)}
+                              onClick={() => requestDeleteSymbol(item.symbol)}
                               aria-label={`Delete ${item.symbol}`}
                               title={`Delete ${item.symbol}`}
                             >
@@ -811,7 +1177,7 @@ export default function WorkflowPage() {
                                   </span>
                                 </div>
 
-                                <LightweightOhlcChart points={allPreviewPoints} theme={theme} />
+                                <LightweightOhlcChart points={allPreviewPoints} theme={theme} showEquityPane={false} />
                               </>
                             ) : (
                               <p className="dataset-help mb-0">Preview unavailable for this symbol.</p>
@@ -1094,6 +1460,419 @@ export default function WorkflowPage() {
                     </div>
                   </div>
                 </div>
+              ) : activeMenu === "backtest" ? (
+                <div className="dataset-form">
+                  <div className="backtest-history-topbar mb-3">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <p className="section-tag mb-0">Backtest History</p>
+                      <span className="dataset-help">{backtestHistory.length} runs</span>
+                    </div>
+
+                    {backtestHistoryStatus ? <p className="dataset-status mb-2">{backtestHistoryStatus}</p> : null}
+
+                    <div
+                      className={`backtest-history-carousel ${showBacktestCarouselNav ? "has-arrows" : "no-arrows"}`}
+                      aria-label="Backtest history carousel"
+                    >
+                      {showBacktestCarouselNav ? (
+                        <button
+                          type="button"
+                          className="btn btn-outline-cyan btn-sm backtest-carousel-arrow"
+                          onClick={() => scrollBacktestHistory("left")}
+                          aria-label="Scroll backtest history left"
+                          disabled={isLoadingBacktestHistory || backtestHistory.length === 0}
+                        >
+                          ◀
+                        </button>
+                      ) : null}
+
+                      <div className="backtest-history-viewport">
+                        <div className="backtest-history-row" ref={backtestHistoryBarRef}>
+                          {isLoadingBacktestHistory ? (
+                            <div className="backtest-history-card muted">Loading history...</div>
+                          ) : backtestHistory.length === 0 ? (
+                            <div className="backtest-history-card muted">
+                              No stored backtests yet. Run one to begin history tracking.
+                            </div>
+                          ) : (
+                            backtestHistory.map((item) => {
+                              const isSelected = Number(item.id) === Number(selectedBacktestId);
+                              const totalReturn = Number(item.totalReturnPct);
+                              const isDeleting = Number(backtestDeletePendingId) === Number(item.id);
+
+                              return (
+                                <div key={item.id} className={`backtest-history-card ${isSelected ? "active" : ""}`}>
+                                  <button
+                                    type="button"
+                                    className="backtest-history-card-select"
+                                    onClick={() => loadBacktestDetails(item.id)}
+                                    disabled={isLoadingBacktestDetails || isDeleting}
+                                  >
+                                    <div className="d-flex justify-content-between align-items-center">
+                                      <strong>{item.symbol}</strong>
+                                      <span
+                                        className={`backtest-history-return ${
+                                          Number.isFinite(totalReturn)
+                                            ? totalReturn >= 0
+                                              ? "is-positive"
+                                              : "is-negative"
+                                            : ""
+                                        }`}
+                                      >
+                                        {Number.isFinite(totalReturn) ? `${formatPrice(totalReturn)}%` : "--"}
+                                      </span>
+                                    </div>
+                                    <p className="backtest-history-meta mb-0">{formatTimestamp(item.backtestAt)}</p>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-danger btn-sm backtest-history-delete-btn"
+                                    onClick={() => requestDeleteBacktest(item)}
+                                    disabled={isDeleting || isLoadingBacktestDetails}
+                                    aria-label={`Delete backtest ${item.id}`}
+                                    title="Delete"
+                                  >
+                                    {isDeleting ? (
+                                      "..."
+                                    ) : (
+                                      <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false">
+                                        <path
+                                          d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z"
+                                          fill="currentColor"
+                                        />
+                                      </svg>
+                                    )}
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {showBacktestCarouselNav ? (
+                        <button
+                          type="button"
+                          className="btn btn-outline-cyan btn-sm backtest-carousel-arrow"
+                          onClick={() => scrollBacktestHistory("right")}
+                          aria-label="Scroll backtest history right"
+                          disabled={isLoadingBacktestHistory || backtestHistory.length === 0}
+                        >
+                          ▶
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="row g-3">
+                    <div className="col-12 col-xl-4">
+                      <div className="trained-models-panel h-100">
+                        <p className="section-tag mb-2">Backtest Inputs</p>
+                        <p className="dataset-help mb-3">
+                          Configure parameters and run a new backtest. History selection is managed in the top bar.
+                        </p>
+
+                        <div className="mb-3">
+                          <label className="form-label dataset-label" htmlFor="backtest-symbol-select">
+                            Symbol
+                          </label>
+                          <select
+                            id="backtest-symbol-select"
+                            className="form-select dataset-input"
+                            value={backtestSymbol}
+                            onChange={(event) => setBacktestSymbol(event.target.value)}
+                            disabled={isBacktesting || trainStocks.length === 0}
+                          >
+                            {trainStocks.length === 0 ? (
+                              <option value="">No downloaded stocks found</option>
+                            ) : (
+                              trainStocks.map((symbol) => (
+                                <option key={symbol} value={symbol}>
+                                  {symbol}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+
+                        <div className="row g-2 mb-2">
+                          <div className="col-12">
+                            <label className="form-label dataset-label" htmlFor="backtest-cash-input">
+                              Initial Cash
+                            </label>
+                            <input
+                              id="backtest-cash-input"
+                              type="number"
+                              min="1"
+                              className="form-control dataset-input"
+                              value={backtestInitialCash}
+                              onChange={(event) => setBacktestInitialCash(Number(event.target.value))}
+                              disabled={isBacktesting}
+                            />
+                          </div>
+
+                          <div className="col-6">
+                            <label className="form-label dataset-label" htmlFor="backtest-rsi-window-input">
+                              RSI Window
+                            </label>
+                            <input
+                              id="backtest-rsi-window-input"
+                              type="number"
+                              min="2"
+                              className="form-control dataset-input"
+                              value={backtestRsiWindow}
+                              onChange={(event) => setBacktestRsiWindow(Number(event.target.value))}
+                              disabled={isBacktesting}
+                            />
+                          </div>
+
+                          <div className="col-6">
+                            <label className="form-label dataset-label" htmlFor="backtest-streak-input">
+                              Min Streak
+                            </label>
+                            <input
+                              id="backtest-streak-input"
+                              type="number"
+                              min="1"
+                              className="form-control dataset-input"
+                              value={backtestMinStreak}
+                              onChange={(event) => setBacktestMinStreak(Number(event.target.value))}
+                              disabled={isBacktesting}
+                            />
+                          </div>
+
+                          <div className="col-6">
+                            <label className="form-label dataset-label" htmlFor="backtest-lower-input">
+                              RSI Lower
+                            </label>
+                            <input
+                              id="backtest-lower-input"
+                              type="number"
+                              min="1"
+                              max="99"
+                              className="form-control dataset-input"
+                              value={backtestLowerBound}
+                              onChange={(event) => setBacktestLowerBound(Number(event.target.value))}
+                              disabled={isBacktesting}
+                            />
+                          </div>
+
+                          <div className="col-6">
+                            <label className="form-label dataset-label" htmlFor="backtest-upper-input">
+                              RSI Upper
+                            </label>
+                            <input
+                              id="backtest-upper-input"
+                              type="number"
+                              min="1"
+                              max="99"
+                              className="form-control dataset-input"
+                              value={backtestUpperBound}
+                              onChange={(event) => setBacktestUpperBound(Number(event.target.value))}
+                              disabled={isBacktesting}
+                            />
+                          </div>
+
+                        </div>
+
+                        <div className="d-flex flex-column gap-2 mt-3">
+                          <button
+                            type="button"
+                            className="btn btn-cyan"
+                            onClick={handleRunBacktest}
+                            disabled={isBacktesting || !activeModelFile}
+                          >
+                            {isBacktesting ? "Running Backtest..." : "Run Backtest"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline-cyan"
+                            onClick={() => loadBacktestHistory(selectedBacktestId)}
+                            disabled={isLoadingBacktestHistory || isBacktesting}
+                          >
+                            {isLoadingBacktestHistory ? "Refreshing history..." : "Refresh History"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline-cyan"
+                            onClick={loadTrainedModels}
+                            disabled={isLoadingTrainedModels || isBacktesting}
+                          >
+                            {isLoadingTrainedModels ? "Refreshing models..." : "Refresh Active Model"}
+                          </button>
+                        </div>
+
+                        <div className="tracked-details mt-3 backtest-model-summary">
+                          <p className="section-tag mb-2">Model in Use</p>
+                          <p className="dataset-help mb-1 backtest-model-line">
+                            Active file: <span className="backtest-model-file">{activeModelFile || "None selected"}</span>
+                          </p>
+                          <p className="dataset-help mb-0">{modelStatus || "Activate one model in Train Model step."}</p>
+                        </div>
+
+                        {backtestStatus ? <p className="dataset-status mb-0 mt-3">{backtestStatus}</p> : null}
+                      </div>
+                    </div>
+
+                    <div className="col-12 col-xl-8">
+                      {isLoadingBacktestDetails ? (
+                        <div className="tracked-details">
+                          <p className="section-tag mb-2">Backtest Output</p>
+                          <p className="dataset-help mb-0">Loading selected backtest details...</p>
+                        </div>
+                      ) : isBacktesting ? (
+                        <div className="tracked-details backtest-loading-shell">
+                          <p className="section-tag mb-2">Backtest Output</p>
+                          <div className="backtest-loader" aria-hidden="true" />
+                          <p className="dataset-help mb-0">Running backtest...</p>
+                        </div>
+                      ) : backtestRunError ? (
+                        <div className="tracked-details backtest-error-shell">
+                          <p className="section-tag mb-2">Backtest Output</p>
+                          <p className="dataset-status mb-0">Backtest failed: {backtestRunError}</p>
+                        </div>
+                      ) : backtestResult ? (
+                        <div className="tracked-details">
+                          <p className="dataset-help mb-1">
+                            Strategy: Combine RSI threshold crossovers with active LSTM direction forecasts to decide entries and exits.
+                          </p>
+                          <p className="dataset-help mb-2">
+                            Buy when RSI is oversold and bullish predictions persist; sell when RSI is overbought and bearish predictions persist.
+                          </p>
+                          <p className="section-tag mb-2">Backtest Summary</p>
+                          <h3 className="mb-3">{backtestResult.symbol}</h3>
+
+                          <div className="row g-2 mb-3">
+                            <div className="col-6 col-lg-4">
+                              <div className="mini-tile h-100">
+                                <p className="mb-1 dataset-help">Total Return</p>
+                                <p className="mb-0 backtest-metric">{formatPrice(backtestResult.metrics?.totalReturnPct)}%</p>
+                              </div>
+                            </div>
+                            <div className="col-6 col-lg-4">
+                              <div className="mini-tile h-100">
+                                <p className="mb-1 dataset-help">Directional Accuracy</p>
+                                <p className="mb-0 backtest-metric">{formatPrice(backtestResult.metrics?.directionalAccuracyPct)}%</p>
+                              </div>
+                            </div>
+                            <div className="col-6 col-lg-4">
+                              <div className="mini-tile h-100">
+                                <p className="mb-1 dataset-help">Max Drawdown</p>
+                                <p className="mb-0 backtest-metric">{formatPrice(backtestResult.metrics?.maxDrawdownPct)}%</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <ul className="tracked-record-list mb-3">
+                            <li>
+                              <strong>Final Equity</strong>
+                              <span> - {formatPrice(backtestResult.metrics?.finalEquity)}</span>
+                            </li>
+                            <li>
+                              <strong>Buy and Hold Return</strong>
+                              <span> - {formatPrice(backtestResult.metrics?.buyHoldReturnPct)}%</span>
+                            </li>
+                            <li>
+                              <strong>Trades / Win Rate</strong>
+                              <span>
+                                {" "}
+                                - {backtestResult.metrics?.tradeCount ?? 0} / {formatPrice(backtestResult.metrics?.winRatePct)}%
+                              </span>
+                            </li>
+                            <li>
+                              <strong>MAE / RMSE / MAPE</strong>
+                              <span>
+                                {" "}
+                                - {formatPrice(backtestResult.metrics?.mae)} / {formatPrice(backtestResult.metrics?.rmse)} / {formatPrice(backtestResult.metrics?.mape)}%
+                              </span>
+                            </li>
+                            <li>
+                              <strong>Dataset / Model</strong>
+                              <span> - {backtestResult.datasetFile} / {backtestResult.modelFile}</span>
+                            </li>
+                          </ul>
+
+                          <p className="section-tag mb-2">Executed Trade Signals</p>
+                          <div className="table-responsive backtest-table-wrap">
+                            <table className="table table-sm table-dark table-borderless mb-0">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Trade ID</th>
+                                  <th scope="col">Date</th>
+                                  <th scope="col">Signal</th>
+                                  <th scope="col">Price</th>
+                                  <th scope="col">Shares</th>
+                                  <th scope="col">Returns (P/L)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(backtestResult.trades || []).length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="text-muted">
+                                      No buy/sell signals were executed for this backtest run.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  (backtestResult.trades || []).map((trade, index) => (
+                                    <tr key={`${trade.tradeId}-${trade.date}-${index}`}>
+                                      <td>{trade.tradeId ?? "--"}</td>
+                                      <td>{formatTimestamp(trade.date)}</td>
+                                      <td>{String(trade.action || "").toUpperCase()}</td>
+                                      <td>{formatPrice(trade.price)}</td>
+                                      <td>{Number.isFinite(Number(trade.shares)) ? Number(trade.shares).toFixed(4) : "--"}</td>
+                                      <td
+                                        className={
+                                          Number(trade.pnl) > 0
+                                            ? "text-success"
+                                            : Number(trade.pnl) < 0
+                                              ? "text-danger"
+                                              : "text-muted"
+                                        }
+                                      >
+                                        {trade.action === "sell" ? formatCurrency(trade.pnl) : "--"}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="tracked-details mt-3">
+                            <p className="section-tag mb-2">Complete Dataset OHLC with Trades</p>
+                            <p className="dataset-help mb-2">
+                              Full OHLC history for {backtestResult.symbol}. Markers show executed entry and exit trades.
+                            </p>
+
+                            <div className="d-flex flex-wrap gap-2 mb-2">
+                              <span className="preview-chip">BUY markers: {backtestTradeMarkers.filter((t) => t.action === "buy").length}</span>
+                              <span className="preview-chip">SELL markers: {backtestTradeMarkers.filter((t) => t.action === "sell").length}</span>
+                              <span className="preview-chip">Data points: {backtestChartPoints.length}</span>
+                            </div>
+
+                            {backtestChartPoints.length > 0 ? (
+                              <LightweightOhlcChart
+                                points={backtestChartPoints}
+                                tradeMarkers={backtestTradeMarkers}
+                                equityCurve={backtestEquityPoints}
+                                theme={theme}
+                              />
+                            ) : (
+                              <p className="dataset-help mb-0">No chart data available in this backtest response.</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="tracked-details">
+                          <p className="section-tag mb-2">Backtest Output</p>
+                          <p className="dataset-help mb-0">
+                            Select a backtest from history or run a new one to view performance metrics, charts, and trades.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <>
                   <div className="row g-3">
@@ -1149,6 +1928,73 @@ export default function WorkflowPage() {
                 disabled={isModelActionPending}
               >
                 {isModelActionPending ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {symbolPendingDelete ? (
+        <div className="model-delete-modal-overlay" role="presentation">
+          <div className="model-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-symbol-title">
+            <p className="section-tag mb-2">Confirm Deletion</p>
+            <h3 id="delete-symbol-title" className="mb-2">Delete dataset symbol data?</h3>
+            <p className="dataset-help mb-2">
+              You are about to delete all tracked records and files for <strong>{symbolPendingDelete}</strong>.
+            </p>
+            <div className="model-delete-target mb-3">{symbolPendingDelete}</div>
+            <p className="dataset-help mb-3">This action cannot be undone.</p>
+
+            <div className="d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                className="btn btn-outline-cyan"
+                onClick={cancelDeleteSymbol}
+                disabled={isSymbolDeletePending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-danger"
+                onClick={confirmDeleteSymbol}
+                disabled={isSymbolDeletePending}
+              >
+                {isSymbolDeletePending ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {backtestPendingDelete ? (
+        <div className="model-delete-modal-overlay" role="presentation">
+          <div className="model-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-backtest-title">
+            <p className="section-tag mb-2">Confirm Deletion</p>
+            <h3 id="delete-backtest-title" className="mb-2">Delete backtest run?</h3>
+            <p className="dataset-help mb-2">
+              Delete backtest for <strong>{backtestPendingDelete?.symbol || "this stock"}</strong> at {" "}
+              {formatTimestamp(backtestPendingDelete?.backtestAt)}.
+            </p>
+            <div className="model-delete-target mb-3">Backtest ID: {backtestPendingDelete?.id}</div>
+            <p className="dataset-help mb-3">This action cannot be undone.</p>
+
+            <div className="d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                className="btn btn-outline-cyan"
+                onClick={cancelDeleteBacktest}
+                disabled={backtestDeletePendingId != null}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-danger"
+                onClick={confirmDeleteBacktest}
+                disabled={backtestDeletePendingId != null}
+              >
+                {backtestDeletePendingId != null ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

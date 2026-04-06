@@ -295,6 +295,225 @@
   padding: 0.9rem;
 }
 
+.backtest-model-summary {
+  background: rgba(6, 18, 37, 0.44);
+}
+
+.backtest-model-summary .dataset-help {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.backtest-model-line {
+  min-width: 0;
+}
+
+.backtest-model-file {
+  display: inline;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: var(--font-mono);
+}
+
+.backtest-loading-shell,
+.backtest-error-shell {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.7rem;
+}
+
+.backtest-loader {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--cyan);
+  animation: backtestSpin 0.9s linear infinite;
+}
+
+@keyframes backtestSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.backtest-metric {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.backtest-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(4, 13, 26, 0.6);
+  padding: 0.4rem;
+}
+
+.backtest-table-wrap .table {
+  color: var(--text-secondary);
+}
+
+.backtest-table-wrap thead th {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.backtest-table-wrap tbody td {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.backtest-history-topbar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(6, 18, 37, 0.38);
+  padding: 0.65rem 0.75rem;
+}
+
+.backtest-history-carousel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.backtest-history-carousel.no-arrows {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.backtest-carousel-arrow {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.backtest-history-viewport {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.backtest-history-row {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  padding-bottom: 0.2rem;
+}
+
+.backtest-history-row::-webkit-scrollbar {
+  height: 6px;
+}
+
+.backtest-history-row::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 999px;
+}
+
+.backtest-history-card {
+  min-width: 210px;
+  max-width: 230px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(6, 18, 37, 0.45);
+  color: var(--text-primary);
+  padding: 0.42rem 0.48rem;
+  transition: var(--transition);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.backtest-history-card-select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+}
+
+.backtest-history-delete-btn {
+  flex: 0 0 auto;
+  padding: 0.15rem 0.34rem;
+  line-height: 1.2;
+  font-size: 0.68rem;
+}
+
+.backtest-history-card:hover,
+.backtest-history-card.active {
+  border-color: var(--border-bright);
+  background: rgba(0, 212, 255, 0.12);
+}
+
+.backtest-history-card.muted {
+  color: var(--text-secondary);
+}
+
+.backtest-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 680px;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.backtest-history-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(6, 18, 37, 0.45);
+  color: var(--text-primary);
+  padding: 0.6rem;
+  transition: var(--transition);
+}
+
+.backtest-history-item:hover,
+.backtest-history-item.active {
+  border-color: var(--border-bright);
+  background: rgba(0, 212, 255, 0.12);
+}
+
+.backtest-history-meta {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.backtest-history-return {
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+.backtest-history-return.is-positive {
+  color: var(--green);
+}
+
+.backtest-history-return.is-negative {
+  color: var(--red);
+}
+
 .comparison-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -421,7 +640,7 @@
 
 .lw-chart-host {
   width: 100%;
-  height: 360px;
+  height: 560px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(4, 13, 26, 0.6);
@@ -432,13 +651,78 @@
   gap: 8px;
 }
 
+.lw-equity-chart {
+  flex: 0 0 170px;
+  min-height: 170px;
+}
+
 .lw-price-chart {
-  flex: 1 1 auto;
-  min-height: 245px;
+  flex: 1 1 280px;
+  min-height: 260px;
+}
+
+.lw-marker-tooltip {
+  position: absolute;
+  z-index: 8;
+  min-width: 170px;
+  max-width: 260px;
+  pointer-events: none;
+  border: 1px solid var(--border-bright);
+  border-radius: 8px;
+  background: rgba(4, 13, 26, 0.94);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  padding: 0.42rem 0.52rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.lw-marker-tooltip-date {
+  color: var(--cyan);
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.lw-marker-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.12rem;
+}
+
+.lw-marker-tooltip-label {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.36rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+}
+
+.lw-marker-tooltip-label.is-buy {
+  border-color: rgba(0, 229, 160, 0.5);
+  color: var(--green);
+}
+
+.lw-marker-tooltip-label.is-sell {
+  border-color: rgba(255, 77, 109, 0.5);
+  color: var(--red);
+}
+
+.lw-marker-tooltip-pnl {
+  font-weight: 700;
+}
+
+.lw-marker-tooltip-pnl.is-positive {
+  color: var(--green);
+}
+
+.lw-marker-tooltip-pnl.is-negative {
+  color: var(--red);
 }
 
 .lw-volume-chart {
-  flex: 0 0 98px;
+  flex: 0 0 110px;
 }
 
 .preview-sparkline {
@@ -631,6 +915,39 @@
   border-color: rgba(0, 119, 238, 0.55);
 }
 
+:root[data-theme="light"] .backtest-history-topbar {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border-color: rgba(0, 119, 238, 0.28);
+}
+
+:root[data-theme="light"] .backtest-history-card {
+  background: #ffffff;
+  border-color: rgba(0, 119, 238, 0.24);
+  color: #103154;
+}
+
+:root[data-theme="light"] .backtest-history-card:hover,
+:root[data-theme="light"] .backtest-history-card.active {
+  background: rgba(0, 119, 238, 0.12);
+  border-color: rgba(0, 119, 238, 0.55);
+}
+
+:root[data-theme="light"] .backtest-history-item {
+  background: #ffffff;
+  border-color: rgba(0, 119, 238, 0.24);
+  color: #103154;
+}
+
+:root[data-theme="light"] .backtest-history-item:hover,
+:root[data-theme="light"] .backtest-history-item.active {
+  background: rgba(0, 119, 238, 0.12);
+  border-color: rgba(0, 119, 238, 0.55);
+}
+
+:root[data-theme="light"] .backtest-history-meta {
+  color: #3c6288;
+}
+
 :root[data-theme="light"] .comparison-rank,
 :root[data-theme="light"] .comparison-change.is-neutral {
   color: #3d628a;
@@ -647,6 +964,17 @@
   border-color: rgba(0, 119, 238, 0.26);
 }
 
+:root[data-theme="light"] .lw-marker-tooltip {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(0, 119, 238, 0.46);
+  color: #123154;
+  box-shadow: 0 10px 20px rgba(16, 47, 81, 0.18);
+}
+
+:root[data-theme="light"] .lw-marker-tooltip-date {
+  color: #0077ee;
+}
+
 :root[data-theme="light"] .preview-sparkline {
   background: #ffffff;
   border: 1px solid rgba(0, 119, 238, 0.2);
@@ -656,6 +984,23 @@
 :root[data-theme="light"] .tracked-details {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-color: rgba(0, 119, 238, 0.28);
+}
+
+:root[data-theme="light"] .backtest-model-summary {
+  background: #ffffff;
+}
+
+:root[data-theme="light"] .backtest-table-wrap {
+  border-color: rgba(0, 119, 238, 0.28);
+  background: #ffffff;
+}
+
+:root[data-theme="light"] .backtest-table-wrap .table {
+  color: #234a73;
+}
+
+:root[data-theme="light"] .backtest-table-wrap thead th {
+  color: #123154;
 }
 
 :root[data-theme="light"] .chart-grid-line {

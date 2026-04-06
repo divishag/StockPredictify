@@ -168,3 +168,64 @@ export async function deleteTrainedModel(modelFile) {
 
   return body;
 }
+
+export async function runBacktestStrategy(payload = {}) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/dataset/backtest`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function getBacktests() {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/backtests`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function getBacktestById(backtestId) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/backtests/${encodeURIComponent(backtestId)}`);
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}
+
+export async function deleteBacktestById(backtestId) {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/backtests/${encodeURIComponent(backtestId)}`, {
+    method: "DELETE",
+  });
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const backendMessage = body?.detail?.message || body?.message || `Request failed with status ${response.status}`;
+    throw new Error(backendMessage);
+  }
+
+  return body;
+}

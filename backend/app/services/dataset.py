@@ -7,12 +7,48 @@ import psycopg
 from psycopg.rows import dict_row
 import yfinance as yf
 
+try:
+    from curl_cffi import requests as curl_requests
+except Exception:  # noqa: BLE001
+    curl_requests = None
+
 BASE_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_DOWNLOAD_RETRIES = int(os.getenv("DATASET_DOWNLOAD_RETRIES", "3"))
 RETRY_BASE_DELAY_SECONDS = float(os.getenv("DATASET_RETRY_BASE_DELAY", "1.5"))
+
+
+def _get_stock_data_dir() -> Path:
+    """Get the configured stock data directory.
+    
+    Checks STOCK_DATA_BASE_PATH environment variable first, falls back to <project_root>/data.
+    Supports ~ expansion for home directory.
+    Creates directory if it doesn't exist.
+    """
+    custom_path = os.getenv("STOCK_DATA_BASE_PATH", "").strip()
+    
+    if custom_path:
+        data_dir = Path(custom_path).expanduser().resolve()
+    else:
+        data_dir = BASE_DIR / "data"
+    
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def _get_full_data_path(filename: str) -> Path:
+    """Get full file path from base directory + filename.
+    
+    Security check: filename cannot contain path separators or start with '.'
+    """
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise ValueError(f"Invalid filename: {filename}")
+    
+    return _get_stock_data_dir() / filename
+
+
+# Initialize DATA_DIR using the new function
+DATA_DIR = _get_stock_data_dir()
 
 
 class DatasetDownloadError(RuntimeError):
@@ -20,6 +56,76 @@ class DatasetDownloadError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class _YFinanceCookieCompat:
+    """Make curl_cffi cookies iterable as cookie objects for yfinance internals."""
+
+    def __init__(self, cookies):
+        self._cookies = cookies
+
+    def __iter__(self):
+        jar = getattr(self._cookies, "jar", None)
+        if jar is not None:
+            return iter(jar)
+        return iter(self._cookies)
+
+    def __bool__(self):
+        return bool(self._cookies)
+
+    def __getattr__(self, name):
+        return getattr(self._cookies, name)
+
+
+class _YFinanceResponseCompat:
+    """Proxy response with yfinance-compatible cookies iterator semantics."""
+
+    def __init__(self, response):
+        self._response = response
+        self.cookies = _YFinanceCookieCompat(response.cookies)
+
+    def __getattr__(self, name):
+        return getattr(self._response, name)
+
+
+class _YFinanceCurlSessionAdapter:
+    """Adapter that keeps curl_cffi session usage while normalizing response cookies."""
+
+    def __init__(self, session):
+        self._session = session
+        self.cookies = session.cookies
+
+    @staticmethod
+    def _wrap_response(response):
+        cookies = getattr(response, "cookies", None)
+        if cookies is None:
+            return response
+
+        try:
+            first_item = next(iter(cookies))
+        except StopIteration:
+            return response
+        except Exception:  # noqa: BLE001
+            return response
+
+        if isinstance(first_item, str) and getattr(cookies, "jar", None) is not None:
+            return _YFinanceResponseCompat(response)
+
+        return response
+
+    def get(self, *args, **kwargs):
+        response = self._session.get(*args, **kwargs)
+        return self._wrap_response(response)
+
+    def post(self, *args, **kwargs):
+        response = self._session.post(*args, **kwargs)
+        return self._wrap_response(response)
+
+    def close(self):
+        return self._session.close()
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
 
 
 def _database_url() -> str:
@@ -68,67 +174,126 @@ def _connect_db(*, row_factory=None):
 
 
 def _is_rate_limited_error(message: str) -> bool:
+    """Check if error message indicates rate limiting by the data provider."""
     lowered = message.lower()
     return "rate limit" in lowered or "too many requests" in lowered or "yf_rate_limit" in lowered
 
 
+def _classify_exception_error(exc: Exception, symbol: str) -> tuple[str, str]:
+    """Classify an exception and return (code, message) tuple."""
+    exc_message = str(exc).strip()
+    
+    if _is_rate_limited_error(exc_message):
+        return ("rate_limited", f"Rate limited by data provider for {symbol}: {exc_message}")
+    
+    if any(term in exc_message.lower() for term in ["connection", "timeout", "refused", "ssl", "certificate"]):
+        return ("connection_error", f"Connection error for {symbol}: {exc_message}")
+    
+    return ("provider_exception", f"Data provider request failed for {symbol}: {exc_message}")
+
+
+def _create_yfinance_session():
+    """Create a session yfinance can use to reduce provider blocking.
+
+    Prefer curl_cffi with Chrome impersonation when available, since that is the
+    compatibility path suggested by yfinance maintainers and community reports.
+    Fall back to yfinance's default session behavior if the package is missing.
+    """
+    if curl_requests is None:
+        return None
+
+    # yfinance caches cookie objects. If a previous run cached an incompatible
+    # string cookie, clear it so new requests can fetch a compatible cookie.
+    try:
+        cookie_cache = yf.cache.get_cookie_cache()
+        basic_cookie = cookie_cache.lookup("basic")
+        cached_cookie = basic_cookie.get("cookie") if isinstance(basic_cookie, dict) else None
+        if cached_cookie is not None and not hasattr(cached_cookie, "name"):
+            cookie_cache.store("basic", None)
+    except Exception:  # noqa: BLE001
+        pass
+
+    session = curl_requests.Session(impersonate="chrome")
+    return _YFinanceCurlSessionAdapter(session)
+
+
 def _download_with_retry(symbol: str, start_date: str):
+    """Download data with retry logic for transient failures and rate limiting."""
     last_error: DatasetDownloadError | None = None
+    session = _create_yfinance_session()
 
-    for attempt in range(MAX_DOWNLOAD_RETRIES):
-        try:
-            shared_errors = getattr(yf.shared, "_ERRORS", None)
-            if isinstance(shared_errors, dict):
-                shared_errors.pop(symbol, None)
+    try:
+        for attempt in range(MAX_DOWNLOAD_RETRIES):
+            try:
+                # Clear any previous errors from yfinance shared state
+                shared_errors = getattr(yf.shared, "_ERRORS", None)
+                if isinstance(shared_errors, dict):
+                    shared_errors.pop(symbol, None)
 
-            frame = yf.download(
-                symbol,
-                start=start_date,
-                progress=False,
-                auto_adjust=False,
-                threads=False,
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise DatasetDownloadError(
-                "provider_exception",
-                f"Data provider request failed for {symbol}: {str(exc)}",
-            ) from exc
+                frame = yf.download(
+                    symbol,
+                    start=start_date,
+                    progress=False,
+                    auto_adjust=False,
+                    threads=False,
+                    session=session,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Classify the exception error type
+                error_code, error_msg = _classify_exception_error(exc, symbol)
+                last_error = DatasetDownloadError(error_code, error_msg)
 
-        if not frame.empty:
-            return frame
+                # Retry on transient errors and rate limits
+                is_retryable = error_code in ("rate_limited", "connection_error")
+                if is_retryable and attempt < MAX_DOWNLOAD_RETRIES - 1:
+                    time.sleep(RETRY_BASE_DELAY_SECONDS * (2**attempt))
+                    continue
 
-        # yfinance may return empty frame and record a detailed provider error.
-        provider_error = ""
-        try:
-            provider_error = str(getattr(yf.shared, "_ERRORS", {}).get(symbol, ""))
-        except Exception:  # noqa: BLE001
+                # Raise immediately for permanent errors or after max retries
+                raise last_error
+
+            if not frame.empty:
+                return frame
+
+            # yfinance returned empty frame; check detailed provider error from shared state
             provider_error = ""
+            try:
+                provider_error = str(getattr(yf.shared, "_ERRORS", {}).get(symbol, ""))
+            except Exception:  # noqa: BLE001
+                provider_error = ""
 
-        if provider_error and _is_rate_limited_error(provider_error):
-            last_error = DatasetDownloadError(
-                "rate_limited",
-                f"Rate limited by data provider for {symbol}: {provider_error}",
+            if provider_error and _is_rate_limited_error(provider_error):
+                # Rate limit error: retry with backoff
+                last_error = DatasetDownloadError(
+                    "rate_limited",
+                    f"Rate limited by data provider for {symbol}: {provider_error}",
+                )
+                if attempt < MAX_DOWNLOAD_RETRIES - 1:
+                    time.sleep(RETRY_BASE_DELAY_SECONDS * (2**attempt))
+                    continue
+                raise last_error
+
+            if provider_error:
+                # Other provider error (invalid symbol, no data, etc.)
+                raise DatasetDownloadError("provider_error", provider_error)
+
+            # No data returned without provider error
+            raise DatasetDownloadError(
+                "empty_data",
+                f"No data returned for symbol '{symbol}' from start date '{start_date}'.",
             )
-            if attempt < MAX_DOWNLOAD_RETRIES - 1:
-                time.sleep(RETRY_BASE_DELAY_SECONDS * (2**attempt))
-                continue
-            raise last_error
 
-        if provider_error:
-            raise DatasetDownloadError("provider_error", provider_error)
+        # This should rarely be reached, but handle the case where all retries exhausted
+        if last_error:
+            raise last_error
 
         raise DatasetDownloadError(
             "empty_data",
             f"No data returned for symbol '{symbol}' from start date '{start_date}'.",
         )
-
-    if last_error:
-        raise last_error
-
-    raise DatasetDownloadError(
-        "empty_data",
-        f"No data returned for symbol '{symbol}' from start date '{start_date}'.",
-    )
+    finally:
+        if session is not None and hasattr(session, "close"):
+            session.close()
 
 
 def init_dataset_table() -> None:
@@ -151,6 +316,54 @@ def init_dataset_table() -> None:
                 """
             )
         conn.commit()
+    
+    # Migrate any absolute paths to relative paths (filenames only)
+    _migrate_file_paths_to_relative()
+
+
+def _migrate_file_paths_to_relative() -> None:
+    """Migrate existing absolute paths in file_path column to relative paths (filenames only).
+    
+    This handles records that were stored with absolute paths before introducing
+    the _get_stock_data_dir() refactoring.
+    """
+    with _connect_db(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            # Find all rows with absolute paths (contains /, \, or :)
+            cur.execute(
+                """
+                SELECT id, file_path 
+                FROM stock_dataset_downloads 
+                WHERE file_path LIKE '/%' 
+                   OR file_path LIKE '%\\%' 
+                   OR file_path LIKE '%:%';
+                """
+            )
+            rows = cur.fetchall()
+            
+            if not rows:
+                return
+            
+            # Update each row with just the filename
+            migrated = 0
+            for row in rows:
+                try:
+                    old_path = row["file_path"]
+                    new_path = Path(old_path).name  # Extract filename only
+                    
+                    cur.execute(
+                        "UPDATE stock_dataset_downloads SET file_path = %s WHERE id = %s;",
+                        (new_path, row["id"]),
+                    )
+                    migrated += 1
+                except Exception:  # noqa: BLE001
+                    # Skip rows that can't be migrated
+                    pass
+            
+            conn.commit()
+            
+    if migrated > 0:
+        print(f"Migrated {migrated} file paths from absolute to relative format")
 
 
 def _upsert_download_record(
@@ -275,7 +488,11 @@ def get_symbol_preview(symbol: str, points: int | None = None) -> dict[str, str 
     if not row:
         raise RuntimeError(f"No tracked data found for symbol '{normalized}'.")
 
-    file_path = Path(row["file_path"])
+    try:
+        file_path = _get_full_data_path(row["file_path"])
+    except ValueError:
+        raise RuntimeError(f"Invalid file path stored for symbol '{normalized}'.")
+    
     if not file_path.exists():
         raise RuntimeError(f"Tracked file is missing for symbol '{normalized}'.")
 
@@ -368,10 +585,14 @@ def delete_symbol_data(symbol: str) -> dict[str, int | str]:
 
     deleted_files = 0
     for row in rows:
-        file_path = Path(row["file_path"])
-        if file_path.exists():
-            file_path.unlink(missing_ok=True)
-            deleted_files += 1
+        try:
+            file_path = _get_full_data_path(row["file_path"])
+            if file_path.exists():
+                file_path.unlink(missing_ok=True)
+                deleted_files += 1
+        except ValueError:
+            # Invalid filename stored in database, skip
+            pass
 
     return {
         "symbol": normalized,
@@ -385,7 +606,8 @@ def download_dataset_data(symbols: list[str], start_date: str) -> dict:
     failed: list[dict[str, str]] = []
 
     for symbol in symbols:
-        output_path = DATA_DIR / f"{symbol}_{start_date}.csv"
+        filename = f"{symbol}_{start_date}.csv"
+        output_path = _get_full_data_path(filename)
         try:
             frame = _download_with_retry(symbol, start_date)
 
@@ -399,15 +621,15 @@ def download_dataset_data(symbols: list[str], start_date: str) -> dict:
                 start_date=start_date,
                 end_date=end_date,
                 row_count=rows_count,
-                file_name=output_path.name,
-                file_path=str(output_path.resolve()),
+                file_name=filename,
+                file_path=filename,  # Store only the filename, not full path
             )
 
             downloaded.append(
                 {
                     "symbol": symbol,
                     "rows": rows_count,
-                    "file": output_path.name,
+                    "file": filename,
                 }
             )
         except DatasetDownloadError as exc:
@@ -422,5 +644,5 @@ def download_dataset_data(symbols: list[str], start_date: str) -> dict:
     return {
         "downloaded": downloaded,
         "failed": failed,
-        "dataDirectory": str(DATA_DIR),
+        "dataDirectory": str(_get_stock_data_dir()),
     }
