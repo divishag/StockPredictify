@@ -20,7 +20,7 @@ import {
   trainSelectedStock,
 } from "../services/datasetService";
 import { MENU_OPTIONS } from "../types/workflow";
-
+import HelpPage from "./HelpPage";
 function formatPrice(value) {
   const num = Number(value);
   if (Number.isNaN(num)) {
@@ -1873,6 +1873,8 @@ export default function WorkflowPage() {
                     </div>
                   </div>
                 </div>
+              ) : activeMenu === "help" ? (
+                <HelpPage onNavigate={setActiveMenu} />
               ) : (
                 <>
                   <div className="row g-3">
