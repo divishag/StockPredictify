@@ -7,11 +7,6 @@ import psycopg
 from psycopg.rows import dict_row
 import yfinance as yf
 
-try:
-    from curl_cffi import requests as curl_requests
-except Exception:  # noqa: BLE001
-    curl_requests = None
-
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 MAX_DOWNLOAD_RETRIES = int(os.getenv("DATASET_DOWNLOAD_RETRIES", "3"))
@@ -56,76 +51,6 @@ class DatasetDownloadError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
-
-
-class _YFinanceCookieCompat:
-    """Make curl_cffi cookies iterable as cookie objects for yfinance internals."""
-
-    def __init__(self, cookies):
-        self._cookies = cookies
-
-    def __iter__(self):
-        jar = getattr(self._cookies, "jar", None)
-        if jar is not None:
-            return iter(jar)
-        return iter(self._cookies)
-
-    def __bool__(self):
-        return bool(self._cookies)
-
-    def __getattr__(self, name):
-        return getattr(self._cookies, name)
-
-
-class _YFinanceResponseCompat:
-    """Proxy response with yfinance-compatible cookies iterator semantics."""
-
-    def __init__(self, response):
-        self._response = response
-        self.cookies = _YFinanceCookieCompat(response.cookies)
-
-    def __getattr__(self, name):
-        return getattr(self._response, name)
-
-
-class _YFinanceCurlSessionAdapter:
-    """Adapter that keeps curl_cffi session usage while normalizing response cookies."""
-
-    def __init__(self, session):
-        self._session = session
-        self.cookies = session.cookies
-
-    @staticmethod
-    def _wrap_response(response):
-        cookies = getattr(response, "cookies", None)
-        if cookies is None:
-            return response
-
-        try:
-            first_item = next(iter(cookies))
-        except StopIteration:
-            return response
-        except Exception:  # noqa: BLE001
-            return response
-
-        if isinstance(first_item, str) and getattr(cookies, "jar", None) is not None:
-            return _YFinanceResponseCompat(response)
-
-        return response
-
-    def get(self, *args, **kwargs):
-        response = self._session.get(*args, **kwargs)
-        return self._wrap_response(response)
-
-    def post(self, *args, **kwargs):
-        response = self._session.post(*args, **kwargs)
-        return self._wrap_response(response)
-
-    def close(self):
-        return self._session.close()
-
-    def __getattr__(self, name):
-        return getattr(self._session, name)
 
 
 def _database_url() -> str:
@@ -193,28 +118,8 @@ def _classify_exception_error(exc: Exception, symbol: str) -> tuple[str, str]:
 
 
 def _create_yfinance_session():
-    """Create a session yfinance can use to reduce provider blocking.
-
-    Prefer curl_cffi with Chrome impersonation when available, since that is the
-    compatibility path suggested by yfinance maintainers and community reports.
-    Fall back to yfinance's default session behavior if the package is missing.
-    """
-    if curl_requests is None:
-        return None
-
-    # yfinance caches cookie objects. If a previous run cached an incompatible
-    # string cookie, clear it so new requests can fetch a compatible cookie.
-    try:
-        cookie_cache = yf.cache.get_cookie_cache()
-        basic_cookie = cookie_cache.lookup("basic")
-        cached_cookie = basic_cookie.get("cookie") if isinstance(basic_cookie, dict) else None
-        if cached_cookie is not None and not hasattr(cached_cookie, "name"):
-            cookie_cache.store("basic", None)
-    except Exception:  # noqa: BLE001
-        pass
-
-    session = curl_requests.Session(impersonate="chrome")
-    return _YFinanceCurlSessionAdapter(session)
+    """Use yfinance default session behavior."""
+    return None
 
 
 def _download_with_retry(symbol: str, start_date: str):

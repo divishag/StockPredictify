@@ -1,114 +1,129 @@
-# StockAI — Market Intelligence
+# Predictify
 
-An experimental AI tool that analyzes market trends and stock signals.It provides real-time market data and AI-generated investment insights using Groq's Llama 3.3 70B model.
+Predictify is a full-stack stock analysis platform for dataset preparation, model training, and backtesting workflows.
 
-![StockAI](https://img.shields.io/badge/StockAI-v1.0-00d4ff?style=for-the-badge)
-![HTML](https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white)
-![CSS](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
-
----
-
-## What is StockAI?
-
-StockAI is a real-time stock analysis web app that combines live market data with AI-generated insights. Enter any stock ticker and get a full analysis — buy/sell signals, price targets, risk scoring, and a detailed written breakdown powered by Llama 3.3.
-
----
-
-## Features
-
-- **Real-time stock data** — live price, open, high, low, 52-week range, market cap, P/E ratio
-- **Interactive charts** — live Chart.js line charts with 1D / 1W / 1M / 3M period switching
-- **AI-generated analysis** — full written analysis from Groq (Llama 3.3 70B)
-- **Buy/Sell signal** — BULLISH / BEARISH / NEUTRAL with confidence score
-- **Probability bars** — bull vs bear probability percentage
-- **Price targets** — bear case / base case / bull case for 30 days
-- **Risk scoring** — LOW / MEDIUM / HIGH with visual risk meter
-- **Key signals** — 4 AI-detected technical and fundamental signals
-- **8 quick-select stocks** — AAPL, NVDA, TSLA, MSFT, GOOGL, AMZN, META, NFLX
-- **Dark futuristic UI** — glassmorphism cards, neon cyan accents, fully responsive
-
----
+It provides:
+- Dataset download and tracking from Yahoo Finance
+- LSTM model training with progress tracking
+- Backtest execution and history management
+- A modern React workflow UI (Home, Dataset Preparation, Train Model, Backtest Strategy, Compare Results, Help)
 
 ## Tech Stack
 
-| Technology | Purpose |
-|------------|---------|
-| HTML5 | Page structure |
-| CSS3 | Styling, animations, glassmorphism |
-| Vanilla JavaScript | Logic, API calls, DOM manipulation |
-| Chart.js | Interactive stock price charts |
-| Yahoo Finance API | Real-time stock data (no key needed) |
-| Groq API (Llama 3.3 70B) | AI-generated stock analysis |
-| corsproxy.io | CORS proxy for Yahoo Finance |
+### Frontend
+- React (Vite)
+- JavaScript + CSS
+- Workflow-based UI in a single app shell
 
----
+### Backend
+- FastAPI
+- PostgreSQL (metadata/history storage)
+- yfinance for dataset downloads
+- TensorFlow / Keras for model training
 
-## Project Structure
+## Current Project Structure
 
+```text
+StockPredictify/
+|- frontend/
+|  |- src/
+|  |  |- components/
+|  |  |- context/
+|  |  |- pages/
+|  |  |- services/
+|  |  |- styles/
+|  |  |- App.jsx
+|  |  |- App.css
+|  |  |- main.jsx
+|  |- package.json
+|  |- vite.config.js
+|
+|- backend/
+|  |- app/
+|  |  |- main.py
+|  |  |- config.py
+|  |  |- db_init.py
+|  |  |- routers/
+|  |  |  |- health.py
+|  |  |  |- dataset.py
+|  |  |  |- backtest.py
+|  |  |- schemas/
+|  |  |- services/
+|  |     |- dataset.py
+|  |     |- lstm.py
+|  |     |- backtest.py
+|  |     |- backtest_history.py
+|  |- data/
+|  |- models/
+|  |- requirements.txt
+|
+|- predictify.md
+|- README.md
 ```
-StockAI/
-│
-├── index.html                  # Landing page
-├── analyze.template.html       # Analyzer page (rename to analyze.html)
-│
-├── css/
-│   ├── css-base.css            # Design tokens, reset, typography
-│   ├── dark-theme.css          # Dark theme, navbar, background
-│   ├── animations.css          # Scroll reveal, fadeUp animations
-│   ├── stock-card.css          # Stock preview card styles
-│   ├── ui-polish.css           # Responsive breakpoints, polish
-│   └── analyze.css             # Analyzer page styles
-│
-└── js/
-    ├── javascript.js           # Landing page charts and scroll effects
-    ├── finnhub.js              # Yahoo Finance API integration
-    ├── groq.js                 # Groq AI API integration
-    ├── chart-analyzer.js       # Live analyzer chart
-    └── analyze.js              # Main analyzer controller
-```
 
----
+## Main Frontend Workflow
 
-## Setup & Usage
+Predictify currently runs through `WorkflowPage` and includes:
+- Home
+- Dataset Preparation
+- Train Model
+- Backtest Strategy
+- Compare Results
+- Help
 
-### 1. Clone the repo
+## Backend API Overview
+
+### Health
+- `GET /health`
+
+### Dataset Preparation
+- `POST /api/dataset/download`
+- `GET /api/dataset/tracked`
+- `GET /api/dataset/tracked/{symbol}`
+- `GET /api/dataset/tracked/{symbol}/preview`
+- `DELETE /api/dataset/tracked/{symbol}`
+
+### Training
+- `GET /api/dataset/training/stocks`
+- `POST /api/dataset/training/train`
+- `GET /api/dataset/training/train/{job_id}`
+- `GET /api/dataset/training/models`
+- `POST /api/dataset/training/models/{model_file}/activate`
+- `DELETE /api/dataset/training/models/{model_file}`
+
+### Backtesting
+- `POST /api/dataset/backtest`
+- `GET /backtests`
+- `GET /backtests/{backtest_id}`
+- `POST /backtests`
+- `DELETE /backtests/{backtest_id}`
+
+## Local Setup
+
+## 1. Backend
+
 ```bash
-git clone https://github.com/sakshammhere/StockAI-Intelligence.git
-cd StockAI-Intelligence
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m app.db_init
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2. Get a free Groq API key
+Backend runs on `http://localhost:8000`.
 
-### 3. Run & Open in browser
+## 2. Frontend
 
----
-
-## How It Works
-
-```
-User enters ticker (e.g. AAPL)
-        ↓
-Yahoo Finance API fetches:
-├── Current price, open, high, low
-├── Company name, exchange, market cap
-├── P/E ratio, EPS, 52-week high/low
-└── Historical price data for chart
-        ↓
-UI renders price card, chart, metrics instantly
-        ↓
-Groq API (Llama 3.3 70B) receives all stock data
-└── Returns structured JSON analysis:
-    ├── BULLISH / BEARISH / NEUTRAL signal
-    ├── Bull/Bear probability %
-    ├── Risk level + score
-    ├── 30-day price targets (bear/base/bull)
-    ├── 4 key technical/fundamental signals
-    └── Written sections: summary, technical, fundamental, risks, recommendation
-        ↓
-UI renders full AI analysis panel
+```bash
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-## Author
+Frontend runs on `http://localhost:5173`.
 
-**Saksham** — [github.com/sakshammhere](https://github.com/sakshammhere)
+## Notes
+
+- This README reflects the current Predictify implementation and naming.
+- All previous StockAI naming/content has been replaced with Predictify.
