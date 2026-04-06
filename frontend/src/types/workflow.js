@@ -29,4 +29,10 @@ export const MENU_OPTIONS = [
     description: "Compare model variants and strategy outcomes side-by-side.",
     bullets: ["Sharpe and drawdown", "Hit ratio and returns", "Export comparison summary"],
   },
+  {
+    key: "help",
+    label: "Help",
+    description: "Learn how to navigate and use the Predictify features effectively.",
+    bullets: ["Read getting started guide", "Understand the data pipeline", "Learn more about model training"],
+  },
 ];
