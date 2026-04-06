@@ -18,7 +18,7 @@ It provides:
 ### Backend
 - FastAPI
 - PostgreSQL (metadata/history storage)
-- yfinance + curl_cffi session workaround for improved provider compatibility/rate-limit behavior
+- yfinance 
 - TensorFlow / Keras for model training
 
 ## Current Project Structure
