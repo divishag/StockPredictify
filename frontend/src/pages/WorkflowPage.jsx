@@ -172,6 +172,11 @@ export default function WorkflowPage() {
   const [backtestLowerBound, setBacktestLowerBound] = useState(DEFAULT_BACKTEST_LOWER);
   const [backtestUpperBound, setBacktestUpperBound] = useState(DEFAULT_BACKTEST_UPPER);
   const [backtestMinStreak, setBacktestMinStreak] = useState(DEFAULT_BACKTEST_MIN_STREAK);
+  const [compareRows, setCompareRows] = useState([]);
+  const [isLoadingCompareRows, setIsLoadingCompareRows] = useState(false);
+  const [compareStatus, setCompareStatus] = useState("");
+  const [compareSort, setCompareSort] = useState({ key: "backtestAt", direction: "desc" });
+  const [compareFilters, setCompareFilters] = useState({});
   const completedEpochRef = useRef(0);
   const backtestHistoryBarRef = useRef(null);
   const epochTimingRef = useRef({
@@ -265,6 +270,79 @@ export default function WorkflowPage() {
       .filter((row) => row.date && Number.isFinite(row.equity));
   }, [backtestResult]);
 
+  const compareColumns = useMemo(
+    () => [
+      { key: "backtestAt", label: "Run At", type: "date", render: (row) => formatTimestamp(row.backtestAt) },
+      { key: "symbol", label: "Symbol", type: "text" },
+      { key: "totalReturnPct", label: "Total Return %", type: "number", render: (row) => formatPrice(row.totalReturnPct) },
+      { key: "cagrPct", label: "CAGR %", type: "number", render: (row) => formatPrice(row.cagrPct) },
+      { key: "maxDrawdownPct", label: "Max Drawdown %", type: "number", render: (row) => formatPrice(row.maxDrawdownPct) },
+      {
+        key: "directionalAccuracyPct",
+        label: "Directional Accuracy %",
+        type: "number",
+        render: (row) => formatPrice(row.directionalAccuracyPct),
+      },
+      { key: "finalEquity", label: "Final Equity", type: "number", render: (row) => formatPrice(row.finalEquity) },
+      { key: "winRatePct", label: "Win Rate %", type: "number", render: (row) => formatPrice(row.winRatePct) },
+      { key: "tradeCount", label: "Trades", type: "number" },
+      { key: "epochs", label: "Epochs", type: "number" },
+      { key: "batchSize", label: "Batch", type: "number" },
+      { key: "sequenceLength", label: "Sequence", type: "number" },
+      { key: "trainingDateRange", label: "Training Range", type: "text" },
+    ],
+    []
+  );
+
+  const filteredCompareRows = useMemo(() => {
+    return compareRows.filter((row) => {
+      return compareColumns.every((column) => {
+        const rawFilter = String(compareFilters[column.key] || "").trim().toLowerCase();
+        if (!rawFilter) {
+          return true;
+        }
+
+        const sourceValue = row[column.key];
+        const value = sourceValue == null ? "" : String(sourceValue).toLowerCase();
+        return value.includes(rawFilter);
+      });
+    });
+  }, [compareRows, compareColumns, compareFilters]);
+
+  const sortedCompareRows = useMemo(() => {
+    const rows = [...filteredCompareRows];
+    const sortKey = compareSort.key;
+    const direction = compareSort.direction === "asc" ? 1 : -1;
+    const column = compareColumns.find((item) => item.key === sortKey);
+
+    rows.sort((left, right) => {
+      const a = left[sortKey];
+      const b = right[sortKey];
+
+      if (column?.type === "number") {
+        const aNum = Number(a);
+        const bNum = Number(b);
+        const aSafe = Number.isFinite(aNum) ? aNum : Number.NEGATIVE_INFINITY;
+        const bSafe = Number.isFinite(bNum) ? bNum : Number.NEGATIVE_INFINITY;
+        return (aSafe - bSafe) * direction;
+      }
+
+      if (column?.type === "date") {
+        const aTime = new Date(String(a || "")).getTime();
+        const bTime = new Date(String(b || "")).getTime();
+        const aSafe = Number.isFinite(aTime) ? aTime : 0;
+        const bSafe = Number.isFinite(bTime) ? bTime : 0;
+        return (aSafe - bSafe) * direction;
+      }
+
+      const aText = String(a || "").toLowerCase();
+      const bText = String(b || "").toLowerCase();
+      return aText.localeCompare(bText) * direction;
+    });
+
+    return rows;
+  }, [filteredCompareRows, compareSort, compareColumns]);
+
   const activeBacktestModel = useMemo(() => {
     if (!activeModelFile) {
       return null;
@@ -295,6 +373,10 @@ export default function WorkflowPage() {
       void loadTrainedModels();
       void loadBacktestHistory();
       setBacktestStatus("");
+    }
+
+    if (activeMenu === "compare") {
+      void loadCompareRowsFromHistory();
     }
   }, [activeMenu]);
 
@@ -900,6 +982,93 @@ export default function WorkflowPage() {
     } finally {
       setIsBacktesting(false);
     }
+  }
+
+  async function loadCompareRowsFromHistory() {
+    setIsLoadingCompareRows(true);
+    setCompareStatus("");
+
+    try {
+      const payload = await getBacktests();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+
+      if (!items.length) {
+        setCompareRows([]);
+        setCompareStatus("No backtest runs found for comparison yet.");
+        return;
+      }
+
+      const ids = items
+        .map((item) => Number(item.id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+      const details = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            return await getBacktestById(id);
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const rows = details
+        .filter(Boolean)
+        .map((result) => {
+          const metrics = result?.metrics || {};
+          const context = result?.trainingContext || {};
+          const start = context.datasetStartDate || "--";
+          const end = context.datasetEndDate || "--";
+
+          return {
+            id: Number(result.id),
+            backtestAt: result.backtestAt,
+            symbol: result.symbol,
+            totalReturnPct: metrics.totalReturnPct,
+            cagrPct: metrics.cagrPct,
+            maxDrawdownPct: metrics.maxDrawdownPct,
+            directionalAccuracyPct: metrics.directionalAccuracyPct,
+            finalEquity: metrics.finalEquity,
+            winRatePct: metrics.winRatePct,
+            tradeCount: metrics.tradeCount,
+            epochs: context.epochs,
+            batchSize: context.batchSize,
+            sequenceLength: context.sequenceLength,
+            trainingDateRange: `${start} -> ${end}`,
+          };
+        });
+
+      setCompareRows(rows);
+      setCompareStatus(`Loaded ${rows.length} backtest runs.`);
+    } catch (error) {
+      setCompareRows([]);
+      setCompareStatus(`Could not load comparison data: ${error.message}`);
+    } finally {
+      setIsLoadingCompareRows(false);
+    }
+  }
+
+  function handleCompareSort(columnKey) {
+    setCompareSort((previous) => {
+      if (previous.key === columnKey) {
+        return {
+          key: columnKey,
+          direction: previous.direction === "asc" ? "desc" : "asc",
+        };
+      }
+
+      return {
+        key: columnKey,
+        direction: "asc",
+      };
+    });
+  }
+
+  function handleCompareFilterChange(columnKey, value) {
+    setCompareFilters((previous) => ({
+      ...previous,
+      [columnKey]: value,
+    }));
   }
 
   function requestDeleteBacktest(item) {
@@ -1909,6 +2078,90 @@ export default function WorkflowPage() {
                           </p>
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+              ) : activeMenu === "compare" ? (
+                <div className="dataset-form">
+                  <div className="tracked-details mb-3">
+                    <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+                      <div>
+                        <p className="section-tag mb-1">Compare Results</p>
+                        <p className="dataset-help mb-0">All historical backtest runs in one sortable and filterable view.</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline-cyan"
+                        onClick={loadCompareRowsFromHistory}
+                        disabled={isLoadingCompareRows}
+                      >
+                        {isLoadingCompareRows ? "Refreshing..." : "Refresh Table"}
+                      </button>
+                    </div>
+                    {compareStatus ? <p className="dataset-status mb-0 mt-2">{compareStatus}</p> : null}
+                  </div>
+
+                  <div className="backtest-table-wrap compare-results-wrap">
+                    <div className="table-responsive compare-results-scroll">
+                      <table className="table table-sm table-dark table-borderless mb-0 compare-results-table">
+                        <thead>
+                          <tr>
+                            {compareColumns.map((column) => {
+                              const isSorted = compareSort.key === column.key;
+                              const sortMarker = isSorted ? (compareSort.direction === "asc" ? " ▲" : " ▼") : "";
+
+                              return (
+                                <th
+                                  key={`sort-${column.key}`}
+                                  scope="col"
+                                  className="compare-header-cell"
+                                  onClick={() => handleCompareSort(column.key)}
+                                >
+                                  {column.label}
+                                  {sortMarker}
+                                </th>
+                              );
+                            })}
+                          </tr>
+                          <tr>
+                            {compareColumns.map((column) => (
+                              <th key={`filter-${column.key}`} scope="col" className="compare-filter-cell">
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm dataset-input"
+                                  placeholder="Filter"
+                                  value={compareFilters[column.key] || ""}
+                                  onChange={(event) => handleCompareFilterChange(column.key, event.target.value)}
+                                />
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {isLoadingCompareRows ? (
+                            <tr>
+                              <td colSpan={compareColumns.length} className="text-muted">
+                                Loading backtest comparison rows...
+                              </td>
+                            </tr>
+                          ) : sortedCompareRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={compareColumns.length} className="text-muted">
+                                No rows match the current filters.
+                              </td>
+                            </tr>
+                          ) : (
+                            sortedCompareRows.map((row) => (
+                              <tr key={row.id}>
+                                {compareColumns.map((column) => {
+                                  const rendered = column.render ? column.render(row) : row[column.key];
+                                  return <td key={`${row.id}-${column.key}`}>{rendered ?? "--"}</td>;
+                                })}
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
