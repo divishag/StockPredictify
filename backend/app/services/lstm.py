@@ -20,6 +20,8 @@ ACTIVE_MODEL_PATH = MODELS_DIR / "active_model.txt"
 DEFAULT_EPOCHS = 5
 DEFAULT_BATCH_SIZE = 2
 DEFAULT_WINDOW_SIZE = 60
+FEATURE_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
+DEFAULT_TRAIN_RATIO = 0.8
 
 
 def _load_legacy_model_registry() -> list[dict]:
@@ -241,6 +243,12 @@ def list_trained_models() -> dict[str, list[dict] | str | None]:
                 "epochs": params.get("epochs"),
                 "batchSize": params.get("batchSize"),
                 "windowSize": params.get("windowSize"),
+                "featuresUsed": params.get("featuresUsed") or FEATURE_COLUMNS,
+                "datasetStartDate": params.get("datasetStartDate"),
+                "datasetEndDate": params.get("datasetEndDate"),
+                "trainRatio": params.get("trainRatio"),
+                "trainSize": params.get("trainSize"),
+                "testSize": params.get("testSize"),
                 "datasetFile": row.get("dataset_file"),
                 "trainedAt": row["trained_at"].isoformat() if row.get("trained_at") else None,
                 "path": row.get("model_path"),
@@ -354,12 +362,38 @@ def load_data(filepath: Path) -> pd.DataFrame:
     except Exception:  # noqa: BLE001
         df = pd.read_csv(filepath)
 
-    required = ["Open", "High", "Low", "Close", "Volume"]
+    required = FEATURE_COLUMNS
     missing = [col for col in required if col not in df.columns]
     if missing:
         raise RuntimeError(f"Dataset file is missing required columns: {', '.join(missing)}")
 
     return df[required].dropna()
+
+
+def _extract_dataset_date_range(filepath: Path) -> tuple[str | None, str | None]:
+    try:
+        frame = pd.read_csv(filepath, skiprows=[1, 2])
+    except Exception:  # noqa: BLE001
+        frame = pd.read_csv(filepath)
+
+    if frame.empty:
+        return (None, None)
+
+    if "Date" not in frame.columns:
+        first_column = frame.columns[0]
+        frame = frame.rename(columns={first_column: "Date"})
+
+    if "Date" not in frame.columns:
+        return (None, None)
+
+    dates = pd.to_datetime(frame["Date"], errors="coerce").dropna().sort_values()
+    if dates.empty:
+        return (None, None)
+
+    return (
+        pd.Timestamp(dates.iloc[0]).date().isoformat(),
+        pd.Timestamp(dates.iloc[-1]).date().isoformat(),
+    )
 
 
 def split_data(dataset: pd.DataFrame, train_ratio: float = 0.8) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -516,6 +550,7 @@ def train_model_for_symbol(
     mark("load_dataset", "start")
     normalized = symbol.strip().upper()
     file_path = _find_latest_symbol_file(normalized)
+    dataset_start_date, dataset_end_date = _extract_dataset_date_range(file_path)
 
     dataset = load_data(file_path)
     mark("load_dataset", "complete")
@@ -524,7 +559,7 @@ def train_model_for_symbol(
         raise RuntimeError("Dataset is too small for LSTM training. Please download more historical rows.")
 
     mark("split_data", "start")
-    train_data, test_data = split_data(dataset)
+    train_data, test_data = split_data(dataset, train_ratio=DEFAULT_TRAIN_RATIO)
     mark("split_data", "complete")
 
     mark("scale_features", "start")
@@ -613,6 +648,13 @@ def train_model_for_symbol(
                             "epochs": int(epochs),
                             "batchSize": int(batch_size),
                             "windowSize": int(window_size),
+                            "sequenceLength": int(window_size),
+                            "featuresUsed": FEATURE_COLUMNS,
+                            "datasetStartDate": dataset_start_date,
+                            "datasetEndDate": dataset_end_date,
+                            "trainRatio": float(DEFAULT_TRAIN_RATIO),
+                            "trainSize": int(len(train_data)),
+                            "testSize": int(len(test_data)),
                         }
                     ),
                 ),

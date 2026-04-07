@@ -47,6 +47,7 @@ class BacktestMetrics(BaseModel):
     initialCash: float
     finalEquity: float
     totalReturnPct: float
+    cagrPct: float = 0.0
     buyHoldReturnPct: float
     maxDrawdownPct: float
     tradeCount: int
@@ -57,6 +58,18 @@ class BacktestMetrics(BaseModel):
     mae: float
     rmse: float
     mape: float
+
+
+class BacktestTrainingContext(BaseModel):
+    epochs: int | None = None
+    batchSize: int | None = None
+    sequenceLength: int | None = None
+    featuresUsed: list[str] = Field(default_factory=list)
+    datasetStartDate: str | None = None
+    datasetEndDate: str | None = None
+    trainRatio: float | None = None
+    trainSize: int | None = None
+    testSize: int | None = None
 
 
 class BacktestPredictionPoint(BaseModel):
@@ -106,6 +119,7 @@ class BacktestRunResponse(BaseModel):
     modelFile: str
     modelPath: str
     parameters: dict
+    trainingContext: BacktestTrainingContext | None = None
     metrics: BacktestMetrics
     predictions: list[BacktestPredictionPoint]
     chartData: list[BacktestChartPoint]

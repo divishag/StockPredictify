@@ -1,10 +1,56 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from psycopg.rows import dict_row
 
 from app.services.dataset import _connect_db
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _compute_cagr_from_payload(payload: dict) -> float:
+    metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+
+    initial_cash = metrics.get("initialCash")
+    final_equity = metrics.get("finalEquity")
+    try:
+        start_equity = float(initial_cash)
+        end_equity = float(final_equity)
+    except (TypeError, ValueError):
+        return 0.0
+
+    if start_equity <= 0 or end_equity <= 0:
+        return 0.0
+
+    equity_curve = payload.get("equityCurve") if isinstance(payload.get("equityCurve"), list) else []
+    if not equity_curve:
+        return 0.0
+
+    start_date = _parse_iso_datetime((equity_curve[0] or {}).get("date") if isinstance(equity_curve[0], dict) else None)
+    end_date = _parse_iso_datetime((equity_curve[-1] or {}).get("date") if isinstance(equity_curve[-1], dict) else None)
+    if not start_date or not end_date:
+        return 0.0
+
+    years = (end_date - start_date).days / 365.25
+    if years <= 0:
+        return 0.0
+
+    cagr = (end_equity / start_equity) ** (1.0 / years) - 1.0
+    if cagr != cagr or cagr in (float("inf"), float("-inf")):
+        return 0.0
+
+    return round(cagr * 100.0, 4)
 
 
 def init_backtests_table() -> None:
@@ -153,6 +199,10 @@ def get_backtest_run(backtest_id: int) -> dict | None:
     payload = row.get("result_json") or {}
     if not isinstance(payload, dict):
         raise RuntimeError("Stored backtest payload is invalid.")
+
+    metrics = payload.get("metrics")
+    if isinstance(metrics, dict) and "cagrPct" not in metrics:
+        metrics["cagrPct"] = _compute_cagr_from_payload(payload)
 
     payload["id"] = int(row["id"])
     payload["backtestAt"] = row["backtest_at"].isoformat() if row.get("backtest_at") else None

@@ -265,6 +265,22 @@ export default function WorkflowPage() {
       .filter((row) => row.date && Number.isFinite(row.equity));
   }, [backtestResult]);
 
+  const activeBacktestModel = useMemo(() => {
+    if (!activeModelFile) {
+      return null;
+    }
+
+    return trainedModels.find((model) => model.modelFile === activeModelFile) || null;
+  }, [trainedModels, activeModelFile]);
+
+  const activeBacktestSymbol = useMemo(() => {
+    const symbol = String(activeBacktestModel?.symbol || "")
+      .trim()
+      .toUpperCase();
+
+    return symbol;
+  }, [activeBacktestModel]);
+
   useEffect(() => {
     if (activeMenu === "dataset") {
       void loadTrackedSymbols();
@@ -276,7 +292,6 @@ export default function WorkflowPage() {
     }
 
     if (activeMenu === "backtest") {
-      void loadTrainStocks();
       void loadTrainedModels();
       void loadBacktestHistory();
       setBacktestStatus("");
@@ -284,19 +299,13 @@ export default function WorkflowPage() {
   }, [activeMenu]);
 
   useEffect(() => {
-    if (backtestSymbol) {
+    if (activeBacktestSymbol) {
+      setBacktestSymbol((current) => (current === activeBacktestSymbol ? current : activeBacktestSymbol));
       return;
     }
 
-    if (selectedTrainStock) {
-      setBacktestSymbol(selectedTrainStock);
-      return;
-    }
-
-    if (trainStocks.length > 0) {
-      setBacktestSymbol(trainStocks[0]);
-    }
-  }, [trainStocks, selectedTrainStock, backtestSymbol]);
+    setBacktestSymbol("");
+  }, [activeBacktestSymbol]);
 
   useEffect(() => {
     if (!isTrainingModel || !isEpochTrainingActive) {
@@ -1573,26 +1582,20 @@ export default function WorkflowPage() {
                         </p>
 
                         <div className="mb-3">
-                          <label className="form-label dataset-label" htmlFor="backtest-symbol-select">
-                            Symbol
-                          </label>
-                          <select
+                          <div className="d-flex align-items-center justify-content-between">
+                            <label className="form-label dataset-label mb-1" htmlFor="backtest-symbol-select">
+                              Symbol
+                            </label>
+                            <span className="dataset-help mb-1">Active model shown</span>
+                          </div>
+                          <input
                             id="backtest-symbol-select"
-                            className="form-select dataset-input"
-                            value={backtestSymbol}
-                            onChange={(event) => setBacktestSymbol(event.target.value)}
-                            disabled={isBacktesting || trainStocks.length === 0}
-                          >
-                            {trainStocks.length === 0 ? (
-                              <option value="">No downloaded stocks found</option>
-                            ) : (
-                              trainStocks.map((symbol) => (
-                                <option key={symbol} value={symbol}>
-                                  {symbol}
-                                </option>
-                              ))
-                            )}
-                          </select>
+                            type="text"
+                            className="form-control dataset-input"
+                            value={backtestSymbol || "No active model selected"}
+                            readOnly
+                            disabled
+                          />
                         </div>
 
                         <div className="row g-2 mb-2">
@@ -1707,6 +1710,9 @@ export default function WorkflowPage() {
                           <p className="dataset-help mb-1 backtest-model-line">
                             Active file: <span className="backtest-model-file">{activeModelFile || "None selected"}</span>
                           </p>
+                          <p className="dataset-help mb-1 backtest-model-line">
+                            Active symbol: <span className="backtest-model-file">{activeBacktestSymbol || "None selected"}</span>
+                          </p>
                           <p className="dataset-help mb-0">{modelStatus || "Activate one model in Train Model step."}</p>
                         </div>
 
@@ -1743,19 +1749,25 @@ export default function WorkflowPage() {
                           <h3 className="mb-3">{backtestResult.symbol}</h3>
 
                           <div className="row g-2 mb-3">
-                            <div className="col-6 col-lg-4">
+                            <div className="col-6 col-lg-3">
                               <div className="mini-tile h-100">
                                 <p className="mb-1 dataset-help">Total Return</p>
                                 <p className="mb-0 backtest-metric">{formatPrice(backtestResult.metrics?.totalReturnPct)}%</p>
                               </div>
                             </div>
-                            <div className="col-6 col-lg-4">
+                            <div className="col-6 col-lg-3">
+                              <div className="mini-tile h-100">
+                                <p className="mb-1 dataset-help">CAGR</p>
+                                <p className="mb-0 backtest-metric">{formatPrice(backtestResult.metrics?.cagrPct)}%</p>
+                              </div>
+                            </div>
+                            <div className="col-6 col-lg-3">
                               <div className="mini-tile h-100">
                                 <p className="mb-1 dataset-help">Directional Accuracy</p>
                                 <p className="mb-0 backtest-metric">{formatPrice(backtestResult.metrics?.directionalAccuracyPct)}%</p>
                               </div>
                             </div>
-                            <div className="col-6 col-lg-4">
+                            <div className="col-6 col-lg-3">
                               <div className="mini-tile h-100">
                                 <p className="mb-1 dataset-help">Max Drawdown</p>
                                 <p className="mb-0 backtest-metric">{formatPrice(backtestResult.metrics?.maxDrawdownPct)}%</p>
@@ -1789,6 +1801,33 @@ export default function WorkflowPage() {
                             <li>
                               <strong>Dataset / Model</strong>
                               <span> - {backtestResult.datasetFile} / {backtestResult.modelFile}</span>
+                            </li>
+                          </ul>
+
+                          <p className="section-tag mb-2">Active Model Training Details</p>
+                          <ul className="tracked-record-list mb-3">
+                            <li>
+                              <strong>Epochs / Batch / Sequence</strong>
+                              <span>
+                                {" "}
+                                - {backtestResult.trainingContext?.epochs ?? "--"} / {backtestResult.trainingContext?.batchSize ?? "--"} / {backtestResult.trainingContext?.sequenceLength ?? "--"}
+                              </span>
+                            </li>
+                            <li>
+                              <strong>Features Used</strong>
+                              <span>
+                                {" "}
+                                - {Array.isArray(backtestResult.trainingContext?.featuresUsed) && backtestResult.trainingContext.featuresUsed.length
+                                  ? backtestResult.trainingContext.featuresUsed.join(", ")
+                                  : "--"}
+                              </span>
+                            </li>
+                            <li>
+                              <strong>Training Date Range</strong>
+                              <span>
+                                {" "}
+                                - {backtestResult.trainingContext?.datasetStartDate || "--"}{" -> "}{backtestResult.trainingContext?.datasetEndDate || "--"}
+                              </span>
                             </li>
                           </ul>
 

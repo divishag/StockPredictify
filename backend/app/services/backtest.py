@@ -111,6 +111,14 @@ def _resolve_active_model() -> dict:
         "symbol": str(model_record.get("symbol") or "").strip().upper(),
         "datasetFile": str(model_record.get("datasetFile") or "").strip(),
         "windowSize": model_record.get("windowSize"),
+        "epochs": model_record.get("epochs"),
+        "batchSize": model_record.get("batchSize"),
+        "featuresUsed": model_record.get("featuresUsed"),
+        "datasetStartDate": model_record.get("datasetStartDate"),
+        "datasetEndDate": model_record.get("datasetEndDate"),
+        "trainRatio": model_record.get("trainRatio"),
+        "trainSize": model_record.get("trainSize"),
+        "testSize": model_record.get("testSize"),
     }
 
 
@@ -170,6 +178,25 @@ def _compute_regression_metrics(actual: np.ndarray, predicted: np.ndarray) -> di
 
 def _round(value: float, digits: int = 4) -> float:
     return round(float(value), digits)
+
+
+def _compute_cagr_pct(start_equity: float, end_equity: float, start_date: pd.Timestamp, end_date: pd.Timestamp) -> float:
+    if start_equity <= 0 or end_equity <= 0:
+        return 0.0
+
+    days = float((end_date - start_date).days)
+    if days <= 0:
+        return 0.0
+
+    years = days / 365.25
+    if years <= 0:
+        return 0.0
+
+    cagr = (end_equity / start_equity) ** (1.0 / years) - 1.0
+    if np.isnan(cagr) or np.isinf(cagr):
+        return 0.0
+
+    return float(cagr * 100.0)
 
 
 def run_backtest_strategy(payload: dict) -> dict:
@@ -394,6 +421,9 @@ def run_backtest_strategy(payload: dict) -> dict:
 
     total_return_pct = ((final_equity - initial_cash) / initial_cash) * 100
     buy_hold_return_pct = ((final_close - float(close_values[0])) / float(close_values[0])) * 100
+    backtest_start_date = pd.Timestamp(dates[0])
+    backtest_end_date = pd.Timestamp(dates[-1])
+    cagr_pct = _compute_cagr_pct(initial_cash, final_equity, backtest_start_date, backtest_end_date)
 
     actual_array = np.asarray(prediction_actuals, dtype=float)
     predicted_array = np.asarray(prediction_values, dtype=float)
@@ -417,6 +447,10 @@ def run_backtest_strategy(payload: dict) -> dict:
         for index_value, row in data.iterrows()
     ]
 
+    dataset_start_fallback = pd.Timestamp(data.index.min()).date().isoformat() if len(data.index) else None
+    dataset_end_fallback = pd.Timestamp(data.index.max()).date().isoformat() if len(data.index) else None
+    features_used = model_info.get("featuresUsed") or FEATURE_COLUMNS
+
     return {
         "status": "completed",
         "symbol": symbol,
@@ -432,10 +466,22 @@ def run_backtest_strategy(payload: dict) -> dict:
             "upperBound": upper_bound,
             "minConsecutivePredictions": min_consecutive,
         },
+        "trainingContext": {
+            "epochs": model_info.get("epochs"),
+            "batchSize": model_info.get("batchSize"),
+            "sequenceLength": model_info.get("windowSize") or window_size,
+            "featuresUsed": list(features_used) if isinstance(features_used, list) else FEATURE_COLUMNS,
+            "datasetStartDate": model_info.get("datasetStartDate") or dataset_start_fallback,
+            "datasetEndDate": model_info.get("datasetEndDate") or dataset_end_fallback,
+            "trainRatio": model_info.get("trainRatio"),
+            "trainSize": model_info.get("trainSize"),
+            "testSize": model_info.get("testSize"),
+        },
         "metrics": {
             "initialCash": _round(initial_cash, 2),
             "finalEquity": _round(final_equity, 2),
             "totalReturnPct": _round(total_return_pct),
+            "cagrPct": _round(cagr_pct),
             "buyHoldReturnPct": _round(buy_hold_return_pct),
             "maxDrawdownPct": _round(max_drawdown_pct),
             "tradeCount": int(trade_count),
