@@ -526,12 +526,15 @@ def evaluate_predictions(test_data: pd.DataFrame) -> dict[str, float]:
     rmse = float(np.sqrt(mean_squared_error(actual, predicted)))
     mape = float(np.mean(np.abs((actual - predicted) / actual)) * 100)
     r2 = float(r2_score(actual, predicted))
+    # For the UI, expose a bounded percentage-style accuracy derived from MAPE.
+    accuracy_pct = max(0.0, min(100.0, 100.0 - mape))
 
     return {
         "mae": round(mae, 4),
         "rmse": round(rmse, 4),
         "mape": round(mape, 4),
         "r2": round(r2, 4),
+        "accuracyPct": round(accuracy_pct, 4),
     }
 
 

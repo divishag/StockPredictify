@@ -321,6 +321,18 @@ export default function TrainModelPage({ onNavigate }) {
                         1.0 = perfect fit, 0 = no better than mean
                       </div>
                     </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Accuracy</div>
+                      <div className="metric-value">
+                        {(Number.isFinite(Number(trainingResult.metrics.accuracyPct))
+                          ? Number(trainingResult.metrics.accuracyPct)
+                          : Math.max(0, 100 - Number(trainingResult.metrics.mape || 0))
+                        ).toFixed(2)}%
+                      </div>
+                      <div className="metric-help">
+                        Derived as 100 - MAPE (bounded between 0% and 100%)
+                      </div>
+                    </div>
                   </div>
                 </div>
 

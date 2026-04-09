@@ -680,6 +680,7 @@ export default function WorkflowPage() {
         epochs: payload?.epochs ?? epochs,
         batchSize: payload?.batchSize ?? batchSize,
         windowSize: payload?.windowSize ?? windowSize,
+        accuracyPct: Number(payload?.metrics?.accuracyPct),
         modelFile,
       });
       await loadTrainedModels();
@@ -1627,6 +1628,15 @@ export default function WorkflowPage() {
                             <li>
                               <strong>Window size used</strong>
                               <span> - {trainSummary.windowSize}</span>
+                            </li>
+                            <li>
+                              <strong>Model accuracy</strong>
+                              <span>
+                                {" - "}
+                                {Number.isFinite(Number(trainSummary.accuracyPct))
+                                  ? `${Number(trainSummary.accuracyPct).toFixed(2)}%`
+                                  : "--"}
+                              </span>
                             </li>
                             <li>
                               <strong>Saved model filename</strong>
