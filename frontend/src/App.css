@@ -70,6 +70,34 @@
   color: var(--text-primary);
 }
 
+.home-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.home-welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.home-welcome-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  padding: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.home-welcome-title {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .menu-nav .nav-link {
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -1150,6 +1178,10 @@
 }
 
 @media (max-width: 900px) {
+  .home-welcome-grid {
+    grid-template-columns: 1fr;
+  }
+
   .top-nav-row {
     flex-wrap: wrap;
     justify-content: flex-start;

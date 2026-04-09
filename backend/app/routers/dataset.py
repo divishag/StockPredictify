@@ -19,6 +19,7 @@ from app.services.lstm import (
     list_trained_models,
     set_active_trained_model,
     train_model_for_symbol,
+    train_tcn_model_for_symbol,
 )
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
@@ -28,7 +29,7 @@ TRAIN_PROGRESS_STEPS = [
     ("split_data", "Splitting train and test data..."),
     ("scale_features", "Scaling features..."),
     ("build_sequences", "Building sequences..."),
-    ("build_model", "Building LSTM model..."),
+    ("build_model", "Building model..."),
     ("train_model", "Training model..."),
     ("save_model", "Saving trained model..."),
 ]
@@ -131,13 +132,22 @@ def _serialize_job(job: dict) -> dict:
 
 def _run_training_job(job_id: str, payload: TrainModelRequest) -> None:
     try:
-        result = train_model_for_symbol(
-            payload.symbol,
-            epochs=payload.epochs,
-            batch_size=payload.batchSize,
-            window_size=payload.windowSize,
-            progress_callback=lambda step_key, event, meta=None: _update_job_step(job_id, step_key, event, meta),
-        )
+        if payload.modelType == "tcn":
+            result = train_tcn_model_for_symbol(
+                payload.symbol,
+                epochs=payload.epochs,
+                batch_size=payload.batchSize,
+                window_size=payload.windowSize,
+                progress_callback=lambda step_key, event, meta=None: _update_job_step(job_id, step_key, event, meta),
+            )
+        else:
+            result = train_model_for_symbol(
+                payload.symbol,
+                epochs=payload.epochs,
+                batch_size=payload.batchSize,
+                window_size=payload.windowSize,
+                progress_callback=lambda step_key, event, meta=None: _update_job_step(job_id, step_key, event, meta),
+            )
         with TRAIN_JOBS_LOCK:
             job = TRAIN_JOBS.get(job_id)
             if job:

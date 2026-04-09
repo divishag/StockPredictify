@@ -27,6 +27,7 @@ class TrainModelRequest(BaseModel):
     epochs: int = Field(default=5, ge=1, le=200)
     batchSize: int = Field(default=2, ge=1, le=128)
     windowSize: int = Field(default=60, ge=10, le=365)
+    modelType: str = Field(default="lstm")
 
     @field_validator("symbol")
     @classmethod
@@ -34,4 +35,12 @@ class TrainModelRequest(BaseModel):
         normalized = symbol.strip().upper()
         if not normalized:
             raise ValueError("A valid stock symbol is required.")
+        return normalized
+
+    @field_validator("modelType")
+    @classmethod
+    def normalize_model_type(cls, model_type: str) -> str:
+        normalized = model_type.strip().lower()
+        if normalized not in {"lstm", "tcn"}:
+            raise ValueError("modelType must be either 'lstm' or 'tcn'.")
         return normalized

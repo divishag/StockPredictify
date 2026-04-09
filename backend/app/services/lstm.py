@@ -240,6 +240,7 @@ def list_trained_models() -> dict[str, list[dict] | str | None]:
                 "modelName": row.get("model_name"),
                 "modelFile": row.get("model_file"),
                 "symbol": row.get("symbol"),
+                "modelType": params.get("modelType") or "lstm",
                 "epochs": params.get("epochs"),
                 "batchSize": params.get("batchSize"),
                 "windowSize": params.get("windowSize"),
@@ -526,12 +527,14 @@ def evaluate_predictions(test_data: pd.DataFrame) -> dict[str, float]:
     rmse = float(np.sqrt(mean_squared_error(actual, predicted)))
     mape = float(np.mean(np.abs((actual - predicted) / actual)) * 100)
     r2 = float(r2_score(actual, predicted))
+    accuracy = max(0.0, 100.0 - mape)
 
     return {
         "mae": round(mae, 4),
         "rmse": round(rmse, 4),
         "mape": round(mape, 4),
         "r2": round(r2, 4),
+        "accuracy": round(float(accuracy), 4),
     }
 
 
@@ -645,6 +648,7 @@ def train_model_for_symbol(
                     file_path.name,
                     json.dumps(
                         {
+                            "modelType": "lstm",
                             "epochs": int(epochs),
                             "batchSize": int(batch_size),
                             "windowSize": int(window_size),
@@ -664,6 +668,203 @@ def train_model_for_symbol(
 
     return {
         "symbol": normalized,
+        "modelType": "lstm",
+        "epochs": int(epochs),
+        "batchSize": int(batch_size),
+        "windowSize": int(window_size),
+        "datasetFile": file_path.name,
+        "modelFile": model_file_name,
+        "message": "Training completed and model saved successfully.",
+        "metrics": metrics,
+    }
+
+
+def build_tcn_model(timesteps: int, features: int):
+    try:
+        from keras.layers import Add, Activation, Conv1D, Dense, Dropout, Input, Lambda
+        from keras.models import Model
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "Keras is not installed. Install training dependencies before using Train Model."
+        ) from exc
+
+    def tcn_residual_block(
+        x,
+        *,
+        filters: int,
+        kernel_size: int,
+        dilation_rate: int,
+        dropout_rate: float,
+    ):
+        prev_x = x
+        y = Conv1D(
+            filters,
+            kernel_size,
+            dilation_rate=dilation_rate,
+            padding="causal",
+            activation="relu",
+        )(x)
+        y = Dropout(dropout_rate)(y)
+        y = Conv1D(
+            filters,
+            kernel_size,
+            dilation_rate=dilation_rate,
+            padding="causal",
+        )(y)
+
+        if prev_x.shape[-1] is None or int(prev_x.shape[-1]) != filters:
+            prev_x = Conv1D(filters, kernel_size=1, padding="same")(prev_x)
+
+        y = Add()([prev_x, y])
+        return Activation("relu")(y)
+
+    inputs = Input(shape=(timesteps, features))
+    x = inputs
+    for dilation_rate in [1, 2, 4, 8, 16]:
+        x = tcn_residual_block(
+            x,
+            filters=64,
+            kernel_size=3,
+            dilation_rate=dilation_rate,
+            dropout_rate=0.1,
+        )
+
+    x = Lambda(lambda t: t[:, -1, :])(x)
+    outputs = Dense(units=features)(x)
+    return Model(inputs=inputs, outputs=outputs)
+
+
+def train_tcn_model_for_symbol(
+    symbol: str,
+    *,
+    epochs: int = DEFAULT_EPOCHS,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    window_size: int = DEFAULT_WINDOW_SIZE,
+    progress_callback: Callable[[str, str, dict | None], None] | None = None,
+) -> dict[str, str | int | dict[str, float]]:
+    def mark(step_key: str, event: str, meta: dict | None = None) -> None:
+        if progress_callback:
+            progress_callback(step_key, event, meta)
+
+    mark("load_dataset", "start")
+    normalized = symbol.strip().upper()
+    file_path = _find_latest_symbol_file(normalized)
+    dataset_start_date, dataset_end_date = _extract_dataset_date_range(file_path)
+
+    dataset = load_data(file_path)
+    mark("load_dataset", "complete")
+
+    if len(dataset) <= window_size * 2:
+        raise RuntimeError("Dataset is too small for TCN training. Please download more historical rows.")
+
+    mark("split_data", "start")
+    train_data, test_data = split_data(dataset, train_ratio=DEFAULT_TRAIN_RATIO)
+    mark("split_data", "complete")
+
+    mark("scale_features", "start")
+    scaled_train, scaler = scale_data(train_data)
+    mark("scale_features", "complete")
+
+    mark("build_sequences", "start")
+    x_train, y_train = build_sequences(scaled_train, window_size=window_size)
+    mark("build_sequences", "complete")
+
+    if len(x_train) == 0:
+        raise RuntimeError("Not enough data to build training sequences.")
+
+    mark("build_model", "start")
+    model = build_tcn_model(timesteps=x_train.shape[1], features=x_train.shape[2])
+    mark("build_model", "complete")
+
+    mark("train_model", "start")
+    model = train_model(
+        model,
+        x_train,
+        y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        epoch_progress_callback=lambda current_epoch, total_epochs, elapsed_ms: mark(
+            "train_model",
+            "progress",
+            {
+                "currentEpoch": int(current_epoch),
+                "totalEpochs": int(total_epochs),
+                "progressPct": int((current_epoch / max(1, total_epochs)) * 100),
+                "elapsedMs": int(elapsed_ms),
+            },
+        ),
+    )
+    mark("train_model", "complete")
+
+    inputs_data = prepare_test_input(dataset, test_data, scaler, window_size=window_size)
+    predictions = predict(model, inputs_data, scaler, window_size=window_size)
+
+    test_with_predictions = test_data.copy()
+    test_with_predictions["Predictions"] = predictions[:, 3]
+    metrics = evaluate_predictions(test_with_predictions)
+
+    mark("save_model", "start")
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    model_file_name = f"saved_model_{normalized}_TCN_{timestamp}.keras"
+    model_path = MODELS_DIR / model_file_name
+    model.save(model_path)
+
+    with _connect_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE trained_models SET is_active = FALSE, updated_at = NOW() WHERE is_active = TRUE;")
+            cur.execute(
+                """
+                INSERT INTO trained_models (
+                    model_name,
+                    symbol,
+                    model_file,
+                    model_path,
+                    dataset_file,
+                    training_params,
+                    trained_at,
+                    is_active
+                )
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb, NOW(), TRUE)
+                ON CONFLICT (model_file)
+                DO UPDATE SET
+                    model_name = EXCLUDED.model_name,
+                    symbol = EXCLUDED.symbol,
+                    model_path = EXCLUDED.model_path,
+                    dataset_file = EXCLUDED.dataset_file,
+                    training_params = EXCLUDED.training_params,
+                    trained_at = EXCLUDED.trained_at,
+                    is_active = TRUE,
+                    updated_at = NOW();
+                """,
+                (
+                    f"{normalized} TCN {timestamp}",
+                    normalized,
+                    model_file_name,
+                    str(model_path.resolve()),
+                    file_path.name,
+                    json.dumps(
+                        {
+                            "modelType": "tcn",
+                            "epochs": int(epochs),
+                            "batchSize": int(batch_size),
+                            "windowSize": int(window_size),
+                            "sequenceLength": int(window_size),
+                            "featuresUsed": FEATURE_COLUMNS,
+                            "datasetStartDate": dataset_start_date,
+                            "datasetEndDate": dataset_end_date,
+                            "trainRatio": float(DEFAULT_TRAIN_RATIO),
+                            "trainSize": int(len(train_data)),
+                            "testSize": int(len(test_data)),
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+    mark("save_model", "complete")
+
+    return {
+        "symbol": normalized,
+        "modelType": "tcn",
         "epochs": int(epochs),
         "batchSize": int(batch_size),
         "windowSize": int(window_size),

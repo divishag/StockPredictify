@@ -1,19 +1,7 @@
-#protected files
-analyze.html
-js/config.js
-
-# frontend build artifacts
-frontend/node_modules/
-frontend/dist/
-
-# local environment files
+backend/.venv311/
+backend/v311/
+backend/models/*.keras
+backend/data/*.csv
 backend/.env
-.env
-# python virtual environments
-.venv/
-backend/.venv/
-
-# python cache artifacts
 __pycache__/
-*.pyc
-*.pyo
+node_modules/

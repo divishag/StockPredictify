@@ -85,6 +85,11 @@ function getEpochProgressIncrement(avgEpochDurationMs) {
 const DEFAULT_EPOCHS = 5;
 const DEFAULT_BATCH_SIZE = 2;
 const DEFAULT_WINDOW_SIZE = 60;
+const DEFAULT_MODEL_TYPE = "lstm";
+const TRAIN_MODEL_OPTIONS = [
+  { value: "lstm", label: "LSTM" },
+  { value: "tcn", label: "TCN" },
+];
 const DEFAULT_BACKTEST_CASH = 100000;
 const DEFAULT_BACKTEST_MIN_STREAK = 3;
 const DEFAULT_BACKTEST_RSI_WINDOW = 14;
@@ -96,7 +101,7 @@ const TRAIN_PROGRESS_STEPS = [
   { key: "split_data", label: "Splitting train and test data..." },
   { key: "scale_features", label: "Scaling features..." },
   { key: "build_sequences", label: "Building sequences..." },
-  { key: "build_model", label: "Building LSTM model..." },
+  { key: "build_model", label: "Building selected model..." },
   { key: "train_model", label: "Training model..." },
   { key: "save_model", label: "Saving trained model..." },
 ];
@@ -150,6 +155,7 @@ export default function WorkflowPage() {
   const [epochs, setEpochs] = useState(DEFAULT_EPOCHS);
   const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
   const [windowSize, setWindowSize] = useState(DEFAULT_WINDOW_SIZE);
+  const [trainModelType, setTrainModelType] = useState(DEFAULT_MODEL_TYPE);
   const [realProgress, setRealProgress] = useState(0);
   const [epochProgressPct, setEpochProgressPct] = useState(0);
   const [epochProgressIncrement, setEpochProgressIncrement] = useState(1);
@@ -498,6 +504,7 @@ export default function WorkflowPage() {
         epochs,
         batchSize,
         windowSize,
+        modelType: trainModelType,
       });
       const jobId = startPayload?.jobId;
       if (!jobId) {
@@ -595,9 +602,11 @@ export default function WorkflowPage() {
       setTrainStatus("Training completed successfully.");
       setTrainSummary({
         symbol: payload?.symbol || selectedTrainStock,
+        modelType: payload?.modelType || trainModelType,
         epochs: payload?.epochs ?? epochs,
         batchSize: payload?.batchSize ?? batchSize,
         windowSize: payload?.windowSize ?? windowSize,
+        accuracy: payload?.metrics?.accuracy,
         modelFile,
       });
       await loadTrainedModels();
@@ -1013,10 +1022,35 @@ export default function WorkflowPage() {
           <section className="hero-panel glass-card mb-4">
             <p className="hero-badge mb-2">WELCOME</p>
             <h1 className="predictify-hero mb-2">Predictify</h1>
-            <h2 className="hero-title mb-2">Build, Train, Backtest, and Compare</h2>
+            <h2 className="hero-title mb-2">Welcome to your stock prediction workspace</h2>
             <p className="hero-subtitle mb-0">
-              Design datasets, train models, validate strategy behavior, and compare outcomes from one workspace.
+              Download data, train with LSTM or TCN, and validate your strategies step by step from one user-friendly dashboard.
             </p>
+            <div className="home-quick-actions mt-3">
+              <button type="button" className="btn btn-cyan btn-sm" onClick={() => setActiveMenu("dataset")}>
+                Start with Dataset
+              </button>
+              <button type="button" className="btn btn-outline-cyan btn-sm" onClick={() => setActiveMenu("train")}>
+                Train LSTM / TCN
+              </button>
+              <button type="button" className="btn btn-outline-cyan btn-sm" onClick={() => setActiveMenu("backtest")}>
+                Run Backtest
+              </button>
+            </div>
+            <div className="home-welcome-grid mt-3">
+              <div className="home-welcome-card">
+                <p className="home-welcome-title mb-1">Step 1</p>
+                <p className="mb-0">Download and preview stock datasets.</p>
+              </div>
+              <div className="home-welcome-card">
+                <p className="home-welcome-title mb-1">Step 2</p>
+                <p className="mb-0">Choose your model: keep LSTM or switch to TCN.</p>
+              </div>
+              <div className="home-welcome-card">
+                <p className="home-welcome-title mb-1">Step 3</p>
+                <p className="mb-0">Evaluate metrics and backtest before comparing outcomes.</p>
+              </div>
+            </div>
           </section>
         ) : null}
 
@@ -1260,6 +1294,9 @@ export default function WorkflowPage() {
                                   <p className="trained-model-meta mb-2">
                                     Params: E{model.epochs ?? "--"} / B{model.batchSize ?? "--"} / W{model.windowSize ?? "--"}
                                   </p>
+                                  <p className="trained-model-meta mb-2">
+                                    Type: {String(model.modelType || "lstm").toUpperCase()}
+                                  </p>
 
                                   <div className="d-flex gap-2">
                                     <button
@@ -1325,6 +1362,28 @@ export default function WorkflowPage() {
                         </select>
                         <p className="dataset-help mb-0 mt-2">
                           Only stocks with existing CSV files in the backend data folder are listed.
+                        </p>
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="form-label dataset-label" htmlFor="train-model-type-select">
+                          Model Type
+                        </label>
+                        <select
+                          id="train-model-type-select"
+                          className="form-select dataset-input"
+                          value={trainModelType}
+                          onChange={(event) => setTrainModelType(event.target.value)}
+                          disabled={isTrainingModel}
+                        >
+                          {TRAIN_MODEL_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="dataset-help mb-0 mt-2">
+                          LSTM uses the existing architecture. TCN uses the newly added temporal convolution model.
                         </p>
                       </div>
 
@@ -1448,6 +1507,10 @@ export default function WorkflowPage() {
                               <span> - {trainSummary.symbol}</span>
                             </li>
                             <li>
+                              <strong>Model type</strong>
+                              <span> - {String(trainSummary.modelType || "lstm").toUpperCase()}</span>
+                            </li>
+                            <li>
                               <strong>Epochs used</strong>
                               <span> - {trainSummary.epochs}</span>
                             </li>
@@ -1458,6 +1521,16 @@ export default function WorkflowPage() {
                             <li>
                               <strong>Window size used</strong>
                               <span> - {trainSummary.windowSize}</span>
+                            </li>
+                            <li>
+                              <strong>Accuracy</strong>
+                              <span>
+                                {" "}
+                                -{" "}
+                                {Number.isFinite(Number(trainSummary.accuracy))
+                                  ? `${Number(trainSummary.accuracy).toFixed(2)}%`
+                                  : "--"}
+                              </span>
                             </li>
                             <li>
                               <strong>Saved model filename</strong>
