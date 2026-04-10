@@ -73,7 +73,8 @@ def _infer_symbol_from_model_file(model_file: str) -> str:
     return normalized.split("_", 1)[0].upper()
 
 
-def _set_active_model_in_tx(cur, model_file: str) -> None:
+def _set_active_model_in_tx(cur, model_file: str) -> None:  #set active model in current transaction
+    #Mark one model as the only active model inside the current DB transaction.
     cur.execute("SELECT id FROM trained_models WHERE model_file = %s;", (model_file,))
     row = cur.fetchone()
     if not row:
@@ -121,7 +122,7 @@ def _ensure_any_active_model(cur) -> str | None:
     return chosen
 
 
-def init_trained_models_table() -> None:
+def init_trained_models_table() -> None: #Creates the trained_models table if needed and migrates existing .keras files and legacy metadata into it.
     with _connect_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
