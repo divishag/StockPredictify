@@ -65,6 +65,11 @@ function formatElapsedSeconds(ms) {
   return (numeric / 1000).toFixed(1);
 }
 
+function parseNumberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function isValidEpochValue(value) {
   return Number.isInteger(value) && value > 0;
 }
@@ -498,6 +503,30 @@ export default function WorkflowPage() {
       const payload = await getBacktestById(id);
       setBacktestResult(payload || null);
       setSelectedBacktestId(id);
+
+      const parameters = payload?.parameters || {};
+      const parsedInitialCash = parseNumberOrNull(parameters.initialCash);
+      const parsedRsiWindow = parseNumberOrNull(parameters.rsiWindow);
+      const parsedLowerBound = parseNumberOrNull(parameters.lowerBound);
+      const parsedUpperBound = parseNumberOrNull(parameters.upperBound);
+      const parsedMinStreak = parseNumberOrNull(parameters.minConsecutivePredictions);
+
+      if (parsedInitialCash != null) {
+        setBacktestInitialCash(parsedInitialCash);
+      }
+      if (parsedRsiWindow != null) {
+        setBacktestRsiWindow(parsedRsiWindow);
+      }
+      if (parsedLowerBound != null) {
+        setBacktestLowerBound(parsedLowerBound);
+      }
+      if (parsedUpperBound != null) {
+        setBacktestUpperBound(parsedUpperBound);
+      }
+      if (parsedMinStreak != null) {
+        setBacktestMinStreak(parsedMinStreak);
+      }
+
       setBacktestStatus("");
     } catch (error) {
       setBacktestStatus(`Could not load backtest details: ${error.message}`);
@@ -1980,6 +2009,28 @@ export default function WorkflowPage() {
                             <li>
                               <strong>Dataset / Model</strong>
                               <span> - {backtestResult.datasetFile} / {backtestResult.modelFile}</span>
+                            </li>
+                          </ul>
+
+                          <p className="section-tag mb-2">Saved Backtest Inputs</p>
+                          <ul className="tracked-record-list mb-3">
+                            <li>
+                              <strong>Initial Cash</strong>
+                              <span> - {formatCurrency(backtestResult.parameters?.initialCash)}</span>
+                            </li>
+                            <li>
+                              <strong>RSI Window / Min Streak</strong>
+                              <span>
+                                {" "}
+                                - {backtestResult.parameters?.rsiWindow ?? "--"} / {backtestResult.parameters?.minConsecutivePredictions ?? "--"}
+                              </span>
+                            </li>
+                            <li>
+                              <strong>RSI Lower / RSI Upper</strong>
+                              <span>
+                                {" "}
+                                - {formatPrice(backtestResult.parameters?.lowerBound)} / {formatPrice(backtestResult.parameters?.upperBound)}
+                              </span>
                             </li>
                           </ul>
 

@@ -53,6 +53,24 @@ def _compute_cagr_from_payload(payload: dict) -> float:
     return round(cagr * 100.0, 4)
 
 
+def _to_float(value: object) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value: object) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def init_backtests_table() -> None:
     with _connect_db() as conn:
         with conn.cursor() as cur:
@@ -88,7 +106,18 @@ def save_backtest_run(result: dict) -> dict:
     if not symbol:
         raise RuntimeError("Backtest result is missing symbol and cannot be stored.")
 
-    metrics = result.get("metrics") or {}
+    metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+    parameters = result.get("parameters") if isinstance(result.get("parameters"), dict) else {}
+
+    # Ensure expected backtest inputs are persisted in the dedicated parameters JSONB field.
+    persisted_parameters = {
+        "initialCash": parameters.get("initialCash", metrics.get("initialCash")),
+        "rsiWindow": parameters.get("rsiWindow"),
+        "minConsecutivePredictions": parameters.get("minConsecutivePredictions"),
+        "lowerBound": parameters.get("lowerBound"),
+        "upperBound": parameters.get("upperBound"),
+        **parameters,
+    }
 
     with _connect_db(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
@@ -115,7 +144,7 @@ def save_backtest_run(result: dict) -> dict:
                     symbol,
                     result.get("modelFile"),
                     result.get("datasetFile"),
-                    json.dumps(result.get("parameters") or {}),
+                    json.dumps(persisted_parameters),
                     metrics.get("totalReturnPct"),
                     metrics.get("finalEquity"),
                     metrics.get("maxDrawdownPct"),
@@ -147,6 +176,7 @@ def list_backtest_runs(limit: int = 200) -> list[dict]:
                     symbol,
                     model_file,
                     dataset_file,
+                    parameters,
                     total_return_pct,
                     final_equity,
                     max_drawdown_pct,
@@ -166,6 +196,11 @@ def list_backtest_runs(limit: int = 200) -> list[dict]:
             "symbol": row.get("symbol"),
             "modelFile": row.get("model_file"),
             "datasetFile": row.get("dataset_file"),
+            "initialCash": _to_float((row.get("parameters") or {}).get("initialCash")),
+            "rsiWindow": _to_int((row.get("parameters") or {}).get("rsiWindow")),
+            "minConsecutivePredictions": _to_int((row.get("parameters") or {}).get("minConsecutivePredictions")),
+            "lowerBound": _to_float((row.get("parameters") or {}).get("lowerBound")),
+            "upperBound": _to_float((row.get("parameters") or {}).get("upperBound")),
             "totalReturnPct": float(row["total_return_pct"]) if row.get("total_return_pct") is not None else None,
             "finalEquity": float(row["final_equity"]) if row.get("final_equity") is not None else None,
             "maxDrawdownPct": float(row["max_drawdown_pct"]) if row.get("max_drawdown_pct") is not None else None,
@@ -184,6 +219,7 @@ def get_backtest_run(backtest_id: int) -> dict | None:
                 SELECT
                     id,
                     backtest_at,
+                    parameters,
                     result_json
                 FROM backtest_runs
                 WHERE id = %s
@@ -199,6 +235,18 @@ def get_backtest_run(backtest_id: int) -> dict | None:
     payload = row.get("result_json") or {}
     if not isinstance(payload, dict):
         raise RuntimeError("Stored backtest payload is invalid.")
+
+    stored_parameters = row.get("parameters") if isinstance(row.get("parameters"), dict) else {}
+    payload_parameters = payload.get("parameters") if isinstance(payload.get("parameters"), dict) else {}
+    payload["parameters"] = {
+        **stored_parameters,
+        **payload_parameters,
+    }
+
+    if "initialCash" not in payload["parameters"]:
+        metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+        if metrics.get("initialCash") is not None:
+            payload["parameters"]["initialCash"] = metrics.get("initialCash")
 
     metrics = payload.get("metrics")
     if isinstance(metrics, dict) and "cagrPct" not in metrics:

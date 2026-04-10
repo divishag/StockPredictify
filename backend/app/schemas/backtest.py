@@ -132,6 +132,11 @@ class BacktestHistoryItem(BaseModel):
     symbol: str
     modelFile: str | None = None
     datasetFile: str | None = None
+    initialCash: float | None = None
+    rsiWindow: int | None = None
+    minConsecutivePredictions: int | None = None
+    lowerBound: float | None = None
+    upperBound: float | None = None
     totalReturnPct: float | None = None
     finalEquity: float | None = None
     maxDrawdownPct: float | None = None
