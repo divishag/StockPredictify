@@ -1210,11 +1210,11 @@ export default function WorkflowPage() {
       <main className="container-xl content-wrap">
         {activeMenu === "home" ? (
           <section className="hero-panel glass-card mb-4">
-            <p className="hero-badge mb-2">WELCOME</p>
+            <p className="hero-badge mb-2">LSTM WORKFLOW</p>
             <h1 className="predictify-hero mb-2">Predictify</h1>
-            <h2 className="hero-title mb-2">Build, Train, Backtest, and Compare</h2>
+            <h2 className="hero-title mb-2">Stock Prediction and Strategy Backtesting</h2>
             <p className="hero-subtitle mb-0">
-              Design datasets, train models, validate strategy behavior, and compare outcomes from one workspace.
+              Build LSTM-based predictions, test strategy logic across historical data, and review outcomes from one clean workspace.
             </p>
           </section>
         ) : null}
@@ -1226,7 +1226,84 @@ export default function WorkflowPage() {
               <h2 className="mb-2">{selected.label}</h2>
               <p className="mb-4">{selected.description}</p>
 
-              {activeMenu === "dataset" ? (
+              {activeMenu === "home" ? (
+                <div className="home-dashboard">
+                  <div className="home-intro-panel mb-4">
+                    <p className="home-intro-text mb-2">
+                      Predictify is a stock prediction and backtesting platform powered by LSTM models for directional forecasting.
+                    </p>
+                    <p className="dataset-help mb-0">
+                      Use the quick actions below to jump directly into model training, strategy backtesting, and result comparison.
+                    </p>
+                  </div>
+
+                  <div className="row g-3 mb-4">
+                    <div className="col-12 col-md-4">
+                      <button
+                        type="button"
+                        className="home-nav-card"
+                        onClick={() => setActiveMenu("backtest")}
+                      >
+                        <p className="section-tag mb-1">Quick Access</p>
+                        <h3 className="home-nav-title mb-1">Backtesting</h3>
+                        <p className="home-nav-text mb-0">Run RSI + LSTM strategy tests and inspect trades, equity curve, and risk.</p>
+                      </button>
+                    </div>
+                    <div className="col-12 col-md-4">
+                      <button
+                        type="button"
+                        className="home-nav-card"
+                        onClick={() => setActiveMenu("train")}
+                      >
+                        <p className="section-tag mb-1">Quick Access</p>
+                        <h3 className="home-nav-title mb-1">Model Training</h3>
+                        <p className="home-nav-text mb-0">Train LSTM models on downloaded stocks and manage the active model version.</p>
+                      </button>
+                    </div>
+                    <div className="col-12 col-md-4">
+                      <button
+                        type="button"
+                        className="home-nav-card"
+                        onClick={() => setActiveMenu("compare")}
+                      >
+                        <p className="section-tag mb-1">Quick Access</p>
+                        <h3 className="home-nav-title mb-1">Compare Results</h3>
+                        <p className="home-nav-text mb-0">Compare return, CAGR, drawdown, and directional accuracy across runs.</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="row g-3">
+                    <div className="col-12 col-lg-4">
+                      <div className="mini-tile h-100">
+                        <span className="tile-dot" aria-hidden="true" />
+                        <h3 className="home-feature-title mb-2">Strategy Testing</h3>
+                        <p className="dataset-help mb-0">
+                          Validate entry and exit logic with configurable RSI thresholds, streak rules, and capital settings.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="col-12 col-lg-4">
+                      <div className="mini-tile h-100">
+                        <span className="tile-dot" aria-hidden="true" />
+                        <h3 className="home-feature-title mb-2">Predictions</h3>
+                        <p className="dataset-help mb-0">
+                          Generate LSTM-driven next-step direction forecasts and track accuracy against actual market moves.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="col-12 col-lg-4">
+                      <div className="mini-tile h-100">
+                        <span className="tile-dot" aria-hidden="true" />
+                        <h3 className="home-feature-title mb-2">Performance Metrics</h3>
+                        <p className="dataset-help mb-0">
+                          Review return, CAGR, drawdown, win rate, and model error metrics to judge strategy quality.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : activeMenu === "dataset" ? (
                 <div className="row g-3 align-items-start">
                   <div className="col-12 col-lg-3">
                     <div className="dataset-listbox h-100">
