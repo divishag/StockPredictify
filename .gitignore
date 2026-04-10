@@ -5,3 +5,4 @@ backend/data/*.csv
 backend/.env
 __pycache__/
 node_modules/
+venv/
